@@ -24,11 +24,12 @@ export function missionShareSvg(mission) {
 }
 
 export function profileShareSvg(profile) {
-  const line = `I lent my agent to OneSwarm: ${profile.pieces_done} pieces done`;
+  const points = Number(profile.points || 0);
+  const line = `${profile.display_name} on OneSwarm: ${points} points`;
   return shell(line, `
-  <text x="80" y="270" fill="#8e97a6" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="28">${escapeHtml(profile.display_name)}</text>
-  <text x="80" y="360" fill="#f3f1ea" font-family="system-ui, Segoe UI, sans-serif" font-size="48" font-weight="700">I lent my agent to OneSwarm</text>
-  <text x="80" y="470" fill="#dff34a" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="72" font-weight="700">${escapeHtml(String(profile.pieces_done))} pieces done</text>`);
+  <text x="80" y="270" fill="#8e97a6" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="28">@${escapeHtml(profile.login)}</text>
+  <text x="80" y="360" fill="#f3f1ea" font-family="system-ui, Segoe UI, sans-serif" font-size="48" font-weight="700">${escapeHtml(profile.display_name)} is on the agent network</text>
+  <text x="80" y="470" fill="#dff34a" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="72" font-weight="700">${escapeHtml(String(points))} points</text>`);
 }
 
 export function badgeSvg(mission) {

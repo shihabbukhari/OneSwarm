@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { REWARD_NOTICE } from '../src/constants.js';
 import { signWebhook } from '../src/util.js';
-import { cookieFrom, startHarness } from './helpers.js';
+import { startHarness } from './helpers.js';
 
 const yaml = `version: 1
 title: "Score the answer"
@@ -108,17 +108,9 @@ test('a poster promise can be confirmed by the winner', async () => {
     assert.equal(mission.reward.notice, REWARD_NOTICE);
     assert.equal(mission.reward.amount, '25');
 
-    const login = await fetch(`${harness.baseUrl}/auth/demo`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ login: 'bo' }),
-    });
-    const cookie = cookieFrom(login);
-    const me = await fetch(`${harness.baseUrl}/api/me`, { headers: { cookie } });
-    const csrf = (await me.json()).user.csrf_token;
     const received = await fetch(`${harness.baseUrl}/api/missions/1/reward/received`, {
       method: 'POST',
-      headers: { cookie, 'content-type': 'application/json', 'x-csrf-token': csrf },
+      headers: { Authorization: `Bearer ${tokenB}`, 'content-type': 'application/json' },
       body: '{}',
     });
     assert.equal(received.status, 200);

@@ -21,7 +21,13 @@ async function post(baseUrl, token, route, body) {
   return json;
 }
 
-const COUNTRIES = ['BD', 'IN', 'US', 'GB', 'DE', 'BR', 'JP', 'NG', 'KE', 'FR', 'CA', 'AU', 'MX', 'ID', 'SE', 'ZA'];
+const NICKS = [
+  'Atlas', 'Birch', 'Cobalt', 'Delta', 'Ember', 'Fable', 'Garnet', 'Harbor', 'Indigo', 'Juniper',
+  'Kestrel', 'Lumen', 'Maple', 'Nova', 'Onyx', 'Pike', 'Quartz', 'Raven', 'Sable', 'Tundra',
+  'Umber', 'Vale', 'Willow', 'Xenon', 'Yarrow', 'Zephyr', 'Aspen', 'Bramble', 'Cinder', 'Dune',
+  'Echo', 'Flint', 'Grove', 'Heron', 'Iris', 'Jasper', 'Koi', 'Lark', 'Moss', 'Nimbus',
+  'Orbit', 'Pebble', 'Quill', 'Ridge', 'Slate', 'Thistle', 'Ursa', 'Vesper', 'Wren', 'Yew',
+];
 
 export function readTree(dir, base = dir) {
   const files = {};
@@ -58,18 +64,18 @@ function breakRender(source) {
 }
 
 export async function runSwarm({ baseUrl, domain, github, config, paceMs = 0 }) {
+  // Agents sign themselves up through the same endpoint real agents use.
   const tokens = [];
-  for (let index = 0; index < 40; index += 1) {
-    const user = await domain.createDemoUser({
-      login: `pilot-${index}`,
-      displayName: `Pilot ${index}`,
-      countryCode: COUNTRIES[index % COUNTRIES.length],
+  for (let index = 0; index < 50; index += 1) {
+    const name = `${AGENT_NAMES[index % AGENT_NAMES.length].replace(/ /g, '')}-${NICKS[index]}`;
+    const response = await fetch(`${baseUrl}/api/agents/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
     });
-    const perPerson = index < 10 ? 2 : 1;
-    for (let agentIndex = 0; agentIndex < perPerson; agentIndex += 1) {
-      const issued = await domain.createAgentToken(user, AGENT_NAMES[(index + agentIndex * 3) % AGENT_NAMES.length]);
-      tokens.push(issued.token);
-    }
+    const body = await response.json();
+    if (!response.ok) throw new Error(`Register failed: ${JSON.stringify(body)}`);
+    tokens.push(body.key);
   }
   if (tokens.length !== 50) throw new Error(`Expected 50 agents, got ${tokens.length}`);
 

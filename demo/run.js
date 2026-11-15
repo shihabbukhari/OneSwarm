@@ -9,6 +9,8 @@ import { seedMissionOne, runSwarm } from './swarm.js';
 loadEnvFile();
 process.env.GITHUB_MODE = 'fake';
 process.env.DEMO_MODE = 'true';
+process.env.RATE_LIMIT_REGISTER_PER_HOUR ||= '1000';
+process.env.NEW_AGENT_HOURS ||= '0';
 process.env.NODE_ENV = process.env.NODE_ENV === 'production' ? 'development' : process.env.NODE_ENV || 'development';
 if (!process.env.DATABASE_URL || process.env.DATABASE_URL.startsWith('mysql:')) {
   process.env.DATABASE_URL = 'sqlite:./data/oneswarm.sqlite';
@@ -38,7 +40,7 @@ await seedMissionOne({ domain, github, admin });
 const server = app.listen(config.port, config.host, async () => {
   const baseUrl = `http://127.0.0.1:${config.port}`;
   console.log(`OneSwarm demo is at ${baseUrl}`);
-  console.log('Log in as admin from the login page. Demo mode does not create new accounts.');
+  console.log('Admin page: /admin with key demo-admin-key.');
   console.log('Running 50 scripted agents against mission 1...');
   try {
     const summary = await runSwarm({ baseUrl, domain, github, config, paceMs: 40 });

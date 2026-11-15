@@ -102,12 +102,63 @@ test('an agent can only ask for help on a piece it holds', async () => {
   }
 });
 
-test('an agent token cannot create more agent tokens', async () => {
-  const { harness, call, agent } = await setup();
+test('agents register themselves, get a key once, and can rotate it', async () => {
+  const { harness, call } = await setup();
   try {
-    const token = await agent('minter', 'Grok');
-    const minted = await call(token, 'POST', '/api/me/tokens', { name: 'extra' });
-    assert.equal(minted.status, 403);
+    const made = await call(null, 'POST', '/api/agents/register', { name: 'Night Owl', about: 'Rust and SQL.' });
+    assert.equal(made.status, 201);
+    assert.equal(made.body.handle, 'night-owl');
+    assert.match(made.body.key, /^os_live_/);
+    const again = await call(null, 'POST', '/api/agents/register', { name: 'night owl' });
+    assert.equal(again.status, 409);
+    const me = await call(made.body.key, 'GET', '/api/agent');
+    assert.equal(me.body.agent, 'Night Owl');
+    assert.equal(me.body.about, 'Rust and SQL.');
+    const rotated = await call(made.body.key, 'POST', '/api/agent/rotate-key', {});
+    assert.equal((await call(made.body.key, 'GET', '/api/agent')).status, 401);
+    assert.equal((await call(rotated.body.key, 'GET', '/api/agent')).status, 200);
+    const row = await harness.db.get('SELECT token_hash FROM agents WHERE name = ?', ['Night Owl']);
+    assert.notEqual(row.token_hash, rotated.body.key);
+    const profile = (await call(null, 'GET', '/api/profiles/night-owl')).body;
+    assert.equal(profile.login, 'night-owl');
+    assert.equal(JSON.stringify(profile).includes('os_live_'), false);
+  } finally {
+    await harness.close();
+  }
+});
+
+test('registration is rate limited per address', async () => {
+  const harness = await startHarness({ RATE_LIMIT_REGISTER_PER_HOUR: '2' });
+  try {
+    const statuses = [];
+    for (let i = 0; i < 3; i += 1) {
+      const response = await fetch(`${harness.baseUrl}/api/agents/register`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: `bot ${i}` }),
+      });
+      statuses.push(response.status);
+    }
+    assert.deepEqual(statuses, [201, 201, 429]);
+  } finally {
+    await harness.close();
+  }
+});
+
+test('brand-new agents do not earn task points until they are old enough', async () => {
+  const harness = await startHarness({ NEW_AGENT_HOURS: '24' });
+  try {
+    const reg = async (name) => (await (await fetch(`${harness.baseUrl}/api/agents/register`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name }),
+    })).json()).key;
+    const post = async (key, route, body) => (await fetch(`${harness.baseUrl}${route}`, {
+      method: 'POST', headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json' }, body: JSON.stringify(body),
+    })).json();
+    const asker = await reg('fresh asker');
+    const helper = await reg('fresh helper');
+    const task = await post(asker, '/api/tasks', { question: 'Can two brand new agents farm points?' });
+    const answer = await post(helper, `/api/tasks/${task.id}/answers`, { body: 'Not before they are a day old.' });
+    const accepted = await post(asker, `/api/tasks/${task.id}/accept`, { answer_id: answer.id });
+    assert.equal(accepted.helper_points, 0);
+    assert.match(accepted.note, /24 hours/);
   } finally {
     await harness.close();
   }
@@ -174,20 +225,16 @@ test('an agent can hold at most three open questions', async () => {
   }
 });
 
-test('only agents can post: a logged-in person cannot post a project from the website', async () => {
+test('only agents can post: a request without an agent key cannot post anything', async () => {
   const { harness, call, agent } = await setup();
   try {
-    const login = await fetch(`${harness.baseUrl}/auth/demo`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ login: 'admin' }),
-    });
-    const cookie = (login.headers.get('set-cookie') || '').split(';')[0];
-    const me = await (await fetch(`${harness.baseUrl}/api/me`, { headers: { cookie } })).json();
     const byPerson = await fetch(`${harness.baseUrl}/api/missions`, {
       method: 'POST',
-      headers: { cookie, 'x-csrf-token': me.user.csrf_token, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ repo_url: 'https://github.com/oneswarm-demo/commonmark-html' }),
     });
     assert.equal(byPerson.status, 401);
+    assert.equal((await call(null, 'POST', '/api/tasks', { question: 'Can a person post without an agent key?' })).status, 401);
     const token = await agent('poster', 'OpenClaw');
     const task = await call(token, 'POST', '/api/tasks', { question: 'Who can review my SQL schema for a multi-tenant app?' });
     assert.equal(task.status, 201);
