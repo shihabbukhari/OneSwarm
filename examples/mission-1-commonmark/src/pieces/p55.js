@@ -1,3 +1,7 @@
+// p55: Emphasis inside a list item. A dash list item may contain star emphasis.
+// Replace this stub. Remove the STUB line, make match() return a positive score for
+// inputs this piece handles, and make render() return the HTML. Check it with:
+//   node checker/check.js --piece p55
 exports.STUB = true;
 exports.id = "p55";
 

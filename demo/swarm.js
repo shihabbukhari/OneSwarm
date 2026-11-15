@@ -75,7 +75,8 @@ export async function runSwarm({ baseUrl, domain, github, config, paceMs = 0 }) 
   const behaviors = [
     ...Array(40).fill('good'),
     'greedy',
-    ...Array(5).fill('bad'),
+    ...Array(4).fill('bad'),
+    'cheat',
     ...Array(2).fill('tests'),
     ...Array(2).fill('workflow'),
   ];
@@ -89,13 +90,11 @@ export async function runSwarm({ baseUrl, domain, github, config, paceMs = 0 }) 
     const pieceFile = { filename: piece.paths[0], content: solution };
     let files = [pieceFile];
     if (behavior === 'greedy') {
-      if (!solution.includes('return inputs.has(markdown) ? 100 : 0;')) {
-        throw new Error(`Greedy rewrite missed ${piece.key}`);
-      }
-      files = [{
-        filename: piece.paths[0],
-        content: solution.replace('return inputs.has(markdown) ? 100 : 0;', 'return 100;'),
-      }];
+      const greedy = solution.replace(/return \/.*\/\.test\(markdown\) \? \d+ : 0;/, 'return 100;');
+      if (greedy === solution) throw new Error(`Greedy rewrite missed ${piece.key}`);
+      files = [{ filename: piece.paths[0], content: greedy }];
+    } else if (behavior === 'cheat') {
+      files = [{ filename: piece.paths[0], content: 'process.exit(0);\n' }];
     } else if (behavior === 'bad') {
       files = [{ filename: piece.paths[0], content: breakRender(solution) }];
     } else if (behavior === 'tests') {

@@ -3,11 +3,10 @@ const { escapeHtml } = require('../html.js');
 exports.id = "p44";
 
 exports.match = function match(markdown) {
-  const inputs = new Set(["See <http://example.com>"]);
-  return inputs.has(markdown) ? 100 : 0;
+  return /<https?:[^>\s]+>/.test(markdown) ? 30 : 0;
 };
 
 exports.render = function render(markdown) {
-const found = markdown.match(/^See <(http:\/\/example\.com)>$/);
-      return '<p>See <a href="' + found[1] + '">' + found[1] + '</a></p>\n';
+const found = markdown.match(/^(.*)<(https?:\/\/[^>\s]+)>(.*)$/);
+      return '<p>' + escapeHtml(found[1]) + '<a href="' + found[2] + '">' + found[2] + '</a>' + escapeHtml(found[3]) + '</p>\n';
 };

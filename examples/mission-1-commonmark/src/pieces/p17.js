@@ -1,3 +1,7 @@
+// p17: Spaced thematic break. Stars separated by spaces are still a horizontal rule.
+// Replace this stub. Remove the STUB line, make match() return a positive score for
+// inputs this piece handles, and make render() return the HTML. Check it with:
+//   node checker/check.js --piece p17
 exports.STUB = true;
 exports.id = "p17";
 

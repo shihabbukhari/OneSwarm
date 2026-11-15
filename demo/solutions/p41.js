@@ -3,8 +3,7 @@ const { escapeHtml } = require('../html.js');
 exports.id = "p41";
 
 exports.match = function match(markdown) {
-  const inputs = new Set(["Use ``co`de`` here"]);
-  return inputs.has(markdown) ? 100 : 0;
+  return /``[^`\n]*`[^`\n]*``/.test(markdown) ? 25 : 0;
 };
 
 exports.render = function render(markdown) {

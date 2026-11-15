@@ -1,8 +1,10 @@
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { matchTable } from './match-table.js';
 import { rules } from './rules.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -13,14 +15,13 @@ function functionBody(fn) {
 }
 
 function solutionSource(rule) {
-  const inputs = JSON.stringify(rule.cases.map((row) => row.in));
+  const [pattern, score] = matchTable[rule.id];
   return `const { escapeHtml } = require('../html.js');
 
 exports.id = ${JSON.stringify(rule.id)};
 
 exports.match = function match(markdown) {
-  const inputs = new Set(${inputs});
-  return inputs.has(markdown) ? 100 : 0;
+  return ${pattern.toString()}.test(markdown) ? ${score} : 0;
 };
 
 exports.render = function render(markdown) {
@@ -30,7 +31,11 @@ ${functionBody(rule.render)}
 }
 
 function stubSource(rule) {
-  return `exports.STUB = true;
+  return `// ${rule.id}: ${rule.title}. ${rule.blurb}
+// Replace this stub. Remove the STUB line, make match() return a positive score for
+// inputs this piece handles, and make render() return the HTML. Check it with:
+//   node checker/check.js --piece ${rule.id}
+exports.STUB = true;
 exports.id = ${JSON.stringify(rule.id)};
 
 exports.match = function match() {
@@ -40,21 +45,6 @@ exports.match = function match() {
 exports.render = function render() {
   throw new Error('NOT_IMPLEMENTED');
 };
-`;
-}
-
-function pieceTest(rule) {
-  return `const test = require('node:test');
-const assert = require('node:assert/strict');
-const piece = require('../../src/pieces/${rule.id}.js');
-const fixtures = require('../fixtures.js');
-
-test(${JSON.stringify(`${rule.id} ${rule.title}`)}, () => {
-  assert.notEqual(piece.STUB, true, 'replace the stub in src/pieces/${rule.id}.js');
-  for (const row of fixtures[${JSON.stringify(rule.id)}]) {
-    assert.equal(piece.render(row.in), row.out);
-  }
-});
 `;
 }
 
@@ -106,55 +96,9 @@ function markdownToHtml(markdown) {
 module.exports = { markdownToHtml, loadPieces };
 `;
 
-const checkerJs = `const { spawnSync } = require('child_process');
-const path = require('path');
-
-function argument(flag) {
-  const index = process.argv.indexOf(flag);
-  return index === -1 ? '' : process.argv[index + 1] || '';
-}
-
-const piece = argument('--piece');
-if (!/^p\\d+$/.test(piece)) {
-  console.error('Usage: node checker/check.js --piece p01');
-  process.exit(2);
-}
-
-const root = path.resolve(argument('--root') || process.cwd());
-const env = { ...process.env };
-for (const key of Object.keys(env)) {
-  if (key === 'NODE_CHANNEL_FD' || key.startsWith('NODE_TEST')) delete env[key];
-}
-const result = spawnSync(process.execPath, ['--test', path.join(root, 'tests', 'pieces', piece + '.test.js'), path.join(root, 'tests', 'integration.test.js')], {
-  cwd: root,
-  encoding: 'utf8',
-  env,
-});
-const log = ((result.stdout || '') + '\\n' + (result.stderr || '')).trim();
-if (result.status !== 0) {
-  console.error(log.slice(-4000));
-  process.exit(result.status || 1);
-}
-console.log(JSON.stringify({ ok: true, piece }));
-`;
-
-const integrationTest = `const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('fs');
-const path = require('path');
-const { markdownToHtml } = require('../src/index.js');
-const fixtures = require('./fixtures.js');
-
-test('pieces that already passed still render', () => {
-  for (const [id, cases] of Object.entries(fixtures)) {
-    const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'pieces', id + '.js'), 'utf8');
-    if (/exports\\.STUB\\s*=\\s*true/.test(source)) continue;
-    for (const row of cases) {
-      assert.equal(markdownToHtml(row.in), row.out, id);
-    }
-  }
-});
-`;
+const kitDir = path.join(root, 'scripts', 'mission-kit');
+const checkerJs = readFileSync(path.join(kitDir, 'check.js'), 'utf8');
+const harnessJs = readFileSync(path.join(kitDir, 'harness.js'), 'utf8');
 
 const workflow = `name: OneSwarm Check
 on:
@@ -169,7 +113,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
       - name: Reject edits to the checker and tests
         run: |
           git fetch origin \${{ github.base_ref }}
@@ -272,7 +216,7 @@ SOFTWARE.
 function writeMission(dir, meta, pieceRules) {
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(path.join(dir, 'src', 'pieces'), { recursive: true });
-  mkdirSync(path.join(dir, 'tests', 'pieces'), { recursive: true });
+  mkdirSync(path.join(dir, 'tests'), { recursive: true });
   mkdirSync(path.join(dir, 'checker'), { recursive: true });
   mkdirSync(path.join(dir, '.github', 'workflows'), { recursive: true });
   const fixtures = {};
@@ -289,12 +233,11 @@ function writeMission(dir, meta, pieceRules) {
   writeFileSync(path.join(dir, 'src', 'html.js'), htmlJs);
   writeFileSync(path.join(dir, 'src', 'index.js'), indexJs);
   writeFileSync(path.join(dir, 'checker', 'check.js'), checkerJs);
+  writeFileSync(path.join(dir, 'checker', 'harness.js'), harnessJs);
   writeFileSync(path.join(dir, 'tests', 'fixtures.js'), `module.exports = ${JSON.stringify(fixtures, null, 2)};\n`);
-  writeFileSync(path.join(dir, 'tests', 'integration.test.js'), integrationTest);
   writeFileSync(path.join(dir, '.github', 'workflows', 'check.yml'), workflow);
   for (const rule of pieceRules) {
     writeFileSync(path.join(dir, 'src', 'pieces', `${rule.id}.js`), stubSource(rule));
-    writeFileSync(path.join(dir, 'tests', 'pieces', `${rule.id}.test.js`), pieceTest(rule));
   }
 }
 
@@ -321,6 +264,10 @@ function verifySolutions(missionDir, pieceRules) {
           throw new Error(`${rule.id} dispatch mismatch\n got ${JSON.stringify(dispatched)}`);
         }
       }
+    }
+    for (const rule of pieceRules) {
+      const result = spawnSync(process.execPath, ['checker/check.js', '--piece', rule.id], { cwd: dir, encoding: 'utf8' });
+      if (result.status !== 0) throw new Error(`${rule.id} fails the checker\n${result.stderr}`);
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });

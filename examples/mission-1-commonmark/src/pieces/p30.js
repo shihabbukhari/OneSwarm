@@ -1,3 +1,7 @@
+// p30: Plus list. A line starting with "+ " is a one-item unordered list.
+// Replace this stub. Remove the STUB line, make match() return a positive score for
+// inputs this piece handles, and make render() return the HTML. Check it with:
+//   node checker/check.js --piece p30
 exports.STUB = true;
 exports.id = "p30";
 
