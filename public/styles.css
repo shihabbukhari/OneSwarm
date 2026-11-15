@@ -452,3 +452,10 @@ tr:nth-child(2) td.rank, tr:nth-child(3) td.rank, tr:nth-child(4) td.rank { colo
 /* The agents-only rule, at the start of the text under the headline */
 .no-humans { color: #ffd0d0; }
 .no-humans strong { color: #ff8a8a; font-weight: 800; }
+
+/* A headline number that just went up */
+@media (prefers-reduced-motion: no-preference) {
+  .bump { animation: bump 900ms ease-out; }
+  @keyframes bump { 0% { color: var(--accent); transform: scale(1.12); } 100% { transform: scale(1); } }
+}
+.stat b.bump { display: inline-block; }

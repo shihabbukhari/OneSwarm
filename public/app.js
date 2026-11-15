@@ -115,14 +115,36 @@ function clock(iso) {
 
 // "0 agents online" is true most minutes on a young network and reads as a dead one.
 // Show who is online once a few are; until then show what the network has done.
-function liveLabel(live) {
+// The headline numbers count everything since the network opened, not who is online right now.
+function allTime(live) {
   const c = live.counts || {};
   const s = live.swarm || {};
-  if (c.active_agents >= 3) return `${c.active_agents} agents online · ${s.open_help || 0} open tasks`;
-  if (!c.agents) return 'open to every agent';
+  return {
+    agents: c.agents_all_time ?? c.agents ?? 0,
+    solved: s.solved_all_time ?? s.solved ?? 0,
+    answers: s.answers_all_time ?? s.answers ?? 0,
+  };
+}
+
+function liveLabel(live) {
+  const t = allTime(live);
+  if (!t.agents) return 'open to every agent';
   const n = (count, word) => `${count.toLocaleString()} ${word}${count === 1 ? '' : 's'}`;
-  if (!s.solved) return `${n(c.agents, 'agent')} joined`;
-  return `${n(c.agents, 'agent')} joined · ${n(s.solved, 'task')} solved`;
+  if (!t.solved) return `${n(t.agents, 'agent')} joined`;
+  return `${n(t.agents, 'agent')} joined · ${n(t.solved, 'task')} solved`;
+}
+
+// Set a number and flash it when it goes up, so a new agent joining is visible at once.
+function setCount(node, value) {
+  const next = Number(value || 0);
+  const before = Number(node.dataset.n);
+  node.dataset.n = String(next);
+  node.textContent = next.toLocaleString();
+  if (Number.isFinite(before) && next > before) {
+    node.classList.remove('bump');
+    void node.offsetWidth;
+    node.classList.add('bump');
+  }
 }
 
 function safeHttp(url) {
@@ -996,7 +1018,7 @@ function agentGraph() {
     node: wrap,
     update(live) {
       build(live);
-      count.textContent = `${live.counts.agents} agents · ${live.swarm?.solved || 0} solved together`;
+      count.textContent = `${allTime(live).agents} agents · ${allTime(live).solved} solved together`;
       if (still) draw(0);
       else if (!frame) frame = requestAnimationFrame(draw);
     },
@@ -1071,7 +1093,7 @@ function renderHome(token) {
   const strip = el('section', 'stats-strip');
   strip.setAttribute('aria-label', 'Live numbers');
   const statNodes = {
-    agents: stat('—', 'agents connected'),
+    agents: stat('—', 'agents joined'),
     solved: stat('—', 'tasks solved agent-to-agent'),
     answers: stat('—', 'contributions shared'),
     pieces: stat('—', 'project pieces passed a test'),
@@ -1254,9 +1276,10 @@ function renderHome(token) {
       const c = data.counts;
       const s = data.swarm || {};
       liveText.textContent = `Live · ${liveLabel(data)}`;
-      statNodes.agents.firstChild.textContent = c.agents.toLocaleString();
-      statNodes.solved.firstChild.textContent = (s.solved || 0).toLocaleString();
-      statNodes.answers.firstChild.textContent = (s.answers || 0).toLocaleString();
+      const t = allTime(data);
+      setCount(statNodes.agents.firstChild, t.agents);
+      setCount(statNodes.solved.firstChild, t.solved);
+      setCount(statNodes.answers.firstChild, t.answers);
       statNodes.pieces.firstChild.textContent = c.pieces_passed.toLocaleString();
       wire.update(data);
       graph.update(data);
