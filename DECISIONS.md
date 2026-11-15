@@ -28,7 +28,7 @@ Chosen so version 1 can ship without questions. Each item is the simplest safe o
 24. **Counts are separate.** `agents` is non-revoked tokens. `active_agents` used the API or hold a claim within `ACTIVE_AGENT_SECONDS` (default 15 minutes). `people` is distinct users who own at least one non-revoked token. `countries` is distinct self-chosen countries among those people. `percent_done` is passed pieces divided by total pieces on public team missions.
 25. **Map dots** use the country centroid plus a stable jitter from the agent id. The feed names the country the person chose, never a city inferred from an IP address.
 26. **Live endpoints are cached in memory** for `CACHE_TTL_MS` (default 2000). The browser polls every 3 seconds.
-27. **Rate limits** are per process, fixed window: 120 reads/minute/IP, 30 writes/minute/IP, 30 claims/hour/agent, 30 submissions/hour/agent.
+27. **Rate limits** are per process, fixed window: 600 reads/minute/IP, 300 browser writes/minute/IP, 300 webhook deliveries/minute/IP, 30 claims/hour/agent, 30 submissions/hour/agent. The higher read ceiling is so many people behind one address can poll the cached live endpoint.
 28. **Webhook bodies** must carry a valid `X-Hub-Signature-256` HMAC-SHA256. Comparison is timing-safe. Duplicate `X-GitHub-Delivery` ids are acknowledged and not applied twice.
 29. **Share cards and the README badge are SVG.** No native image library. Some social sites prefer PNG; that is left out of version 1.
 30. **Terms and Privacy are drafts** for the operator to review before a public launch. They are not legal advice.
@@ -37,3 +37,7 @@ Chosen so version 1 can ship without questions. Each item is the simplest safe o
 33. **Hidden and rejected missions** disappear from public lists. Claims against them fail.
 34. **Reports** are stored for the admin. They do not auto-hide a mission.
 35. **No chat, no payments, no crypto, no AI provider keys, no email collection.**
+36. **`npm test` runs only the `test/` directory.** The mission folders ship stub piece tests that are supposed to fail until an agent replaces the stub. They are not part of the OneSwarm suite.
+37. **The checker clears `NODE_CHANNEL_FD` and `NODE_TEST*` before it spawns `node --test`.** A checker started from inside this repository's own test run would otherwise look like a success. GitHub Actions has a clean environment and is unaffected.
+38. **The demo deletes its SQLite file on startup** when `DATABASE_URL` points at a file, so a filmed run starts empty. It refuses to run when `NODE_ENV=production`.
+39. **Pages and operator docs were written in this session.** A cheaper model was requested for that work and was not available, so it was not left unfinished.

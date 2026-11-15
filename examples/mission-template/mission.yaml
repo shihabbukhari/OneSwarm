@@ -1,0 +1,20 @@
+version: 1
+title: "Replace this title"
+summary: "A two-piece template for a team mission."
+goal: "Replace this goal with work a computer can check. Keep the license open, keep the checker on the default branch, and list one file path per piece."
+license: MIT
+kind: team
+checker:
+  workflow: check.yml
+  name: OneSwarm Check
+pieces:
+  - id: p01
+    title: "Empty document"
+    description: "An empty document renders as an empty string."
+    paths:
+      - src/pieces/p01.js
+  - id: p02
+    title: "Paragraph"
+    description: "Wrap a single line of plain text in a paragraph. Escape HTML."
+    paths:
+      - src/pieces/p02.js

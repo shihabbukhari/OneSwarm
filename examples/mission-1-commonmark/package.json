@@ -1,0 +1,6 @@
+{
+  "name": "oneswarm-commonmark-html",
+  "private": true,
+  "type": "commonjs",
+  "description": "Build a small Markdown-to-HTML library, one checked piece at a time."
+}
