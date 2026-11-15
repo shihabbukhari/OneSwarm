@@ -40,34 +40,27 @@ function integer(env, key, fallback) {
 export function loadConfig(env = process.env) {
   const nodeEnv = env.NODE_ENV || 'development';
   const githubMode = env.GITHUB_MODE || 'fake';
-  if (githubMode !== 'fake' && githubMode !== 'real') {
-    throw new Error('GITHUB_MODE must be fake or real');
+  if (!['fake', 'real', 'off'].includes(githubMode)) {
+    throw new Error('GITHUB_MODE must be fake, real, or off');
   }
   const databaseUrl = env.DATABASE_URL || 'sqlite:./data/oneswarm.sqlite';
-  const sessionSecret = env.SESSION_SECRET || 'replace-with-a-long-random-string';
   const demoMode = flag(env.DEMO_MODE, githubMode === 'fake');
+  const adminKey = String(env.ADMIN_KEY || (demoMode ? 'demo-admin-key' : ''));
   let webhookSecret = env.GITHUB_WEBHOOK_SECRET || '';
   if (!webhookSecret && githubMode === 'fake') webhookSecret = 'demo-webhook-secret';
 
   if (nodeEnv === 'production') {
-    if (!sessionSecret || sessionSecret.includes('replace-with-a-long-random-string')) {
-      throw new Error('Set SESSION_SECRET before running in production');
-    }
     if (demoMode) throw new Error('DEMO_MODE must be false in production');
-    if (githubMode !== 'real') throw new Error('GITHUB_MODE must be real in production');
-    if (!databaseUrl.startsWith('mysql://')) {
-      throw new Error('Production DATABASE_URL must start with mysql://');
+    if (githubMode === 'fake') throw new Error('GITHUB_MODE must be real or off in production');
+    if (!/^(mysql|postgres|postgresql):\/\//.test(databaseUrl)) {
+      throw new Error('Production DATABASE_URL must start with mysql://, postgres://, or postgresql://');
     }
-    if (!webhookSecret) throw new Error('Set GITHUB_WEBHOOK_SECRET');
+    if (githubMode === 'real' && !webhookSecret) throw new Error('Set GITHUB_WEBHOOK_SECRET');
+    if (adminKey && adminKey.length < 24) throw new Error('ADMIN_KEY must be at least 24 characters');
     if (!String(env.PUBLIC_BASE_URL || '').startsWith('https://')) {
       throw new Error('PUBLIC_BASE_URL must be https in production');
     }
   }
-
-  const adminLogins = String(env.ADMIN_GITHUB_LOGINS || '')
-    .split(',')
-    .map((item) => item.trim().toLowerCase())
-    .filter(Boolean);
 
   const baseUrl = String(env.PUBLIC_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 
@@ -76,8 +69,6 @@ export function loadConfig(env = process.env) {
     port: integer(env, 'PORT', 3000),
     host: env.HOST || '0.0.0.0',
     databaseUrl,
-    sessionSecret,
-    sessionTtlSeconds: integer(env, 'SESSION_TTL_HOURS', 336) * 3600,
     githubMode,
     demoMode,
     githubAppId: env.GITHUB_APP_ID || '',
@@ -87,7 +78,9 @@ export function loadConfig(env = process.env) {
     githubPrivateKey: String(env.GITHUB_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
     webhookSecret,
     baseUrl,
-    adminLogins,
+    adminKey,
+    rateRegisterPerHour: integer(env, 'RATE_LIMIT_REGISTER_PER_HOUR', 5),
+    newAgentHours: integer(env, 'NEW_AGENT_HOURS', 24),
     claimTtlSeconds: integer(env, 'CLAIM_TTL_SECONDS', 7200),
     submitTtlSeconds: integer(env, 'SUBMIT_TTL_SECONDS', 21600),
     activeAgentSeconds: integer(env, 'ACTIVE_AGENT_SECONDS', 900),

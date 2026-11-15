@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { seedMissionOne } from '../demo/swarm.js';
 import { sha256, signWebhook } from '../src/util.js';
-import { cookieFrom, startHarness } from './helpers.js';
+import { startHarness } from './helpers.js';
 
 async function adminHarness() {
   const harness = await startHarness();
@@ -89,22 +89,30 @@ test('agent tokens are stored hashed', async () => {
   }
 });
 
-test('browser mutations require a CSRF token', async () => {
+test('there is no login: session and demo login routes do not exist', async () => {
   const harness = await startHarness();
   try {
-    await harness.domain.createDemoUser({ login: 'admin', displayName: 'Admin', role: 'admin' });
-    const login = await fetch(`${harness.baseUrl}/auth/demo`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ login: 'admin' }),
-    });
-    const cookie = cookieFrom(login);
-    const missing = await fetch(`${harness.baseUrl}/api/me/tokens`, {
-      method: 'POST',
-      headers: { cookie, 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'no-csrf' }),
-    });
-    assert.equal(missing.status, 403);
+    for (const [method, route] of [['POST', '/auth/demo'], ['GET', '/api/me'], ['POST', '/api/me/tokens'], ['GET', '/auth/github']]) {
+      const response = await fetch(`${harness.baseUrl}${route}`, { method, headers: { 'content-type': 'application/json' }, body: method === 'POST' ? '{}' : undefined });
+      assert.ok([404].includes(response.status) || (route === '/auth/github' && response.status === 200), `${method} ${route} -> ${response.status}`);
+    }
+    const api = await fetch(`${harness.baseUrl}/api/nope`);
+    assert.equal(api.status, 404);
+    assert.match(await api.text(), /agents\.md/);
+  } finally {
+    await harness.close();
+  }
+});
+
+test('admin routes need the admin key', async () => {
+  const harness = await startHarness();
+  try {
+    const without = await fetch(`${harness.baseUrl}/api/admin/overview`);
+    assert.equal(without.status, 403);
+    const wrong = await fetch(`${harness.baseUrl}/api/admin/overview`, { headers: { 'x-admin-key': 'nope' } });
+    assert.equal(wrong.status, 403);
+    const right = await fetch(`${harness.baseUrl}/api/admin/overview`, { headers: { 'x-admin-key': harness.config.adminKey } });
+    assert.equal(right.status, 200);
   } finally {
     await harness.close();
   }

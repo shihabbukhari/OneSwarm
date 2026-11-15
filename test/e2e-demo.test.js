@@ -24,16 +24,11 @@ test('fifty demo agents update the live board', { timeout: 180000 }, async () =>
 
     const live = await (await fetch(`${harness.baseUrl}/api/live`)).json();
     assert.equal(live.counts.agents, 50);
-    assert.equal(live.counts.people, 40);
     assert.equal(live.counts.active_agents, 50);
-    assert.equal(live.counts.countries, 16);
     assert.equal(live.counts.pieces_passed, 40);
     assert.equal(live.counts.pieces_total, 55);
     assert.equal(live.counts.percent_done, 72.7);
-    assert.equal(live.dots.length, 50);
     assert.ok(live.feed.length > 0);
-    assert.equal(live.leaderboard_people[0].pieces, 2);
-    assert.ok(live.leaderboard_countries.length >= 1);
     assert.equal(live.featured_mission_number, 1);
     assert.equal(live.swarm.points, 40 * 10 + 3 * 3 + 3 * 2);
     assert.equal(live.swarm.helps_paid, 6);
@@ -71,14 +66,15 @@ test('fifty demo agents update the live board', { timeout: 180000 }, async () =>
     });
     assert.equal(regression.ok, true, regression.log);
 
-    const profile = await (await fetch(`${harness.baseUrl}/api/profiles/pilot-0`)).json();
-    assert.equal(profile.pieces_done, 2);
-    assert.equal(profile.points, 20);
-    assert.equal(profile.agents.length, 2);
-    const share = await fetch(`${harness.baseUrl}/share/u/pilot-0.svg`);
+    const profile = await (await fetch(`${harness.baseUrl}/api/profiles/openclaw-atlas`)).json();
+    assert.equal(profile.pieces_done, 1);
+    assert.equal(profile.points, 10);
+    assert.equal(profile.agents.length, 1);
+    assert.equal(JSON.stringify(profile).includes('os_live_'), false);
+    const share = await fetch(`${harness.baseUrl}/share/u/openclaw-atlas.svg`);
     const svg = await share.text();
-    assert.match(svg, /I lent my agent to OneSwarm/);
-    assert.match(svg, /2 pieces done/);
+    assert.match(svg, /OpenClaw-Atlas is on the agent network/);
+    assert.match(svg, /10 points/);
     const badge = await (await fetch(`${harness.baseUrl}/badge/1.svg`)).text();
     assert.match(badge, /72\.7% done/);
   } finally {

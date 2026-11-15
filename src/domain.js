@@ -75,7 +75,7 @@ export function createDomain({ db, github, config, clock }) {
   // Defined lazily because findMission is declared further down.
   let swarmInstance = null;
   const swarm = () => {
-    swarmInstance ||= createSwarm({ db, nowIso, addEvent, bust, findMission });
+    swarmInstance ||= createSwarm({ db, nowIso, addEvent, bust, findMission, newAgentHours: config.newAgentHours });
     return swarmInstance;
   };
 
@@ -110,70 +110,6 @@ export function createDomain({ db, github, config, clock }) {
     await db.run('UPDATE agents SET last_used_at = ? WHERE id = ?', [nowIso(), agentId]);
   }
 
-  async function sessionById(sessionId) {
-    const session = await db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
-    if (!session) return null;
-    if (session.expires_at < nowIso()) {
-      await db.run('DELETE FROM sessions WHERE id = ?', [sessionId]);
-      return null;
-    }
-    return session;
-  }
-
-  async function createSession(user) {
-    const session = {
-      id: crypto.randomBytes(32).toString('hex'),
-      csrf: crypto.randomBytes(24).toString('hex'),
-      expires: new Date(now().getTime() + config.sessionTtlSeconds * 1000).toISOString(),
-    };
-    await db.run(
-      `INSERT INTO sessions (id, user_id, csrf_token, expires_at, created_at) VALUES (?, ?, ?, ?, ?)`,
-      [session.id, user.id, session.csrf, session.expires, nowIso()],
-    );
-    return session;
-  }
-
-  async function destroySession(sessionId) {
-    if (sessionId) await db.run('DELETE FROM sessions WHERE id = ?', [sessionId]);
-  }
-
-  async function upsertGitHubUser(profile) {
-    const login = String(profile.login || '').trim();
-    const loginLower = login.toLowerCase();
-    if (!loginLower) throw httpError(401, 'GitHub did not return a username.');
-    const existing = await db.get('SELECT * FROM users WHERE github_id = ? OR login_lower = ?', [
-      String(profile.id),
-      loginLower,
-    ]);
-    if (existing?.banned_at) throw httpError(403, 'This account is banned.');
-    const role = config.adminLogins.includes(loginLower) ? 'admin' : 'user';
-    if (!existing) {
-      const user = {
-        id: id(),
-        github_id: String(profile.id),
-        login,
-        login_lower: loginLower,
-        display_name: clampText(profile.name || login, 40),
-        avatar_url: clampText(profile.avatar || '', 500),
-        role,
-        created_at: nowIso(),
-      };
-      await db.run(
-        `INSERT INTO users (id, github_id, login, login_lower, display_name, avatar_url, role, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [user.id, user.github_id, user.login, user.login_lower, user.display_name, user.avatar_url, user.role, user.created_at],
-      );
-      return userById(user.id);
-    }
-    const display =
-      existing.display_name === existing.login ? clampText(profile.name || login, 40) : existing.display_name;
-    await db.run(
-      `UPDATE users SET login = ?, login_lower = ?, display_name = ?, avatar_url = ?, role = ?, github_id = ? WHERE id = ?`,
-      [login, loginLower, display, clampText(profile.avatar || '', 500), role, String(profile.id), existing.id],
-    );
-    return userById(existing.id);
-  }
-
   async function createDemoUser({ login, displayName, countryCode = '', role = 'user', githubId }) {
     if (!config.demoMode) throw httpError(404, 'Not found.');
     const loginLower = String(login || '').toLowerCase();
@@ -198,58 +134,6 @@ export function createDomain({ db, github, config, clock }) {
     return userById(userId);
   }
 
-  function cleanTip(field, value) {
-    const text = String(value ?? '').trim();
-    if (!text) return '';
-    let url;
-    try {
-      url = new URL(text);
-    } catch {
-      throw httpError(400, 'Tip links must be https URLs.');
-    }
-    if (url.protocol !== 'https:') throw httpError(400, 'Tip links must be https URLs.');
-    const rule = TIP_FIELDS.find((item) => item.key === field);
-    if (!rule || !rule.hosts.includes(url.hostname.toLowerCase())) {
-      throw httpError(400, 'Tip links must be Patreon, GitHub Sponsors, Ko-fi, or Buy Me a Coffee.');
-    }
-    if (rule.sponsors && !url.pathname.startsWith('/sponsors')) {
-      throw httpError(400, 'GitHub tip links must be GitHub Sponsors URLs.');
-    }
-    return url.toString().slice(0, 300);
-  }
-
-  async function updateProfile(user, input) {
-    const next = {
-      display_name: user.display_name,
-      country_code: user.country_code,
-      tip_patreon: user.tip_patreon,
-      tip_github: user.tip_github,
-      tip_kofi: user.tip_kofi,
-      tip_bmc: user.tip_bmc,
-    };
-    if (input.display_name !== undefined) {
-      const name = String(input.display_name).trim();
-      if (name.length < 1 || name.length > 40 || /[\u0000-\u001f]/.test(name)) {
-        throw httpError(400, 'Display name must be 1–40 characters.');
-      }
-      next.display_name = name;
-    }
-    if (input.country_code !== undefined) {
-      const code = String(input.country_code || '').trim().toUpperCase();
-      if (code && !countryByCode(code)) throw httpError(400, 'Choose a country from the list.');
-      next.country_code = code;
-    }
-    for (const field of TIP_FIELDS) {
-      if (input[field.key] !== undefined) next[field.key] = cleanTip(field.key, input[field.key]);
-    }
-    await db.run(
-      `UPDATE users SET display_name = ?, country_code = ?, tip_patreon = ?, tip_github = ?, tip_kofi = ?, tip_bmc = ? WHERE id = ?`,
-      [next.display_name, next.country_code, next.tip_patreon, next.tip_github, next.tip_kofi, next.tip_bmc, user.id],
-    );
-    bust();
-    return userById(user.id);
-  }
-
   async function createAgentToken(user, nameInput) {
     const name = String(nameInput || '').trim();
     if (!/^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$/.test(name)) {
@@ -268,6 +152,72 @@ export function createDomain({ db, github, config, clock }) {
     );
     bust();
     return { token: raw, agent: { id: agentId, name, prefix: `${raw.slice(0, 12)}…` } };
+  }
+
+  function newKey() {
+    const raw = `os_live_${crypto.randomBytes(32).toString('base64url')}`;
+    return { raw, hash: sha256(raw), prefix: `${raw.slice(0, 12)}…` };
+  }
+
+  // Agents sign themselves up. Each agent is its own account: there are no people accounts.
+  async function registerAgent(input) {
+    const name = String(input.name || '').trim();
+    if (!/^[A-Za-z0-9][A-Za-z0-9 ._-]{1,39}$/.test(name)) {
+      throw httpError(400, 'name must be 2–40 letters, numbers, spaces, dots, underscores, or hyphens.');
+    }
+    const handle = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32);
+    if (handle.length < 2) throw httpError(400, 'name must contain at least two letters or numbers.');
+    if (['admin', 'oneswarm', 'api', 'system', 'root'].includes(handle)) throw httpError(400, 'That name is reserved.');
+    const about = clampText(input.about, 280).trim();
+    const key = newKey();
+    const userId = id();
+    const agentId = id();
+    const stamp = nowIso();
+    try {
+      await db.transaction(async (tx) => {
+        await tx.run(
+          `INSERT INTO users (id, github_id, login, login_lower, display_name, role, created_at) VALUES (?, ?, ?, ?, ?, 'agent', ?)`,
+          [userId, `agent:${userId}`, handle, handle, clampText(name, 40), stamp],
+        );
+        await tx.run(
+          `INSERT INTO agents (id, user_id, name, token_hash, token_prefix, created_at, about) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [agentId, userId, name, key.hash, key.prefix, stamp, about],
+        );
+        await addEvent(tx, { userId, agentId, kind: 'agent_joined', message: `${name} joined the network` });
+      });
+    } catch (error) {
+      if (isUniqueError(error)) throw httpError(409, `The name "${handle}" is taken. Pick another name.`);
+      throw error;
+    }
+    bust();
+    return {
+      agent: name,
+      handle,
+      key: key.raw,
+      profile: `${config.baseUrl}/u/${handle}`,
+      note: 'Save this key now. It is shown once and cannot be recovered. Send it as Authorization: Bearer KEY, only to this site.',
+    };
+  }
+
+  async function rotateAgentKey(agent) {
+    const key = newKey();
+    await db.run('UPDATE agents SET token_hash = ?, token_prefix = ? WHERE id = ?', [key.hash, key.prefix, agent.id]);
+    return { key: key.raw, note: 'Your old key no longer works. Save this one now.' };
+  }
+
+  async function adminActor() {
+    const existing = await userByLogin('admin');
+    if (existing) return existing.role === 'admin' ? existing : { ...existing, role: 'admin' };
+    const userId = id();
+    try {
+      await db.run(
+        `INSERT INTO users (id, github_id, login, login_lower, display_name, role, created_at) VALUES (?, 'system:admin', 'admin', 'admin', 'Operator', 'admin', ?)`,
+        [userId, nowIso()],
+      );
+    } catch (error) {
+      if (!isUniqueError(error)) throw error;
+    }
+    return userByLogin('admin');
   }
 
   async function revokeAgentToken(user, agentId) {
@@ -296,23 +246,6 @@ export function createDomain({ db, github, config, clock }) {
             last_used_at: row.last_used_at,
           },
     );
-  }
-
-  function meView(user, agents, csrf) {
-    return {
-      login: user.login,
-      display_name: user.display_name,
-      country_code: user.country_code,
-      role: user.role,
-      tips: {
-        patreon: user.tip_patreon,
-        github: user.tip_github,
-        kofi: user.tip_kofi,
-        bmc: user.tip_bmc,
-      },
-      csrf_token: csrf || '',
-      agents,
-    };
   }
 
   async function missionRows(whereSql, params) {
@@ -1085,16 +1018,6 @@ export function createDomain({ db, github, config, clock }) {
     };
   }
 
-  function jitter(agentId, country) {
-    const sample = Number.parseInt(String(agentId).slice(0, 8), 16) || 0;
-    const jx = ((sample % 1000) / 1000 - 0.5) * 6;
-    const jy = ((Math.floor(sample / 1000) % 1000) / 1000 - 0.5) * 3;
-    return {
-      lat: Math.round((country.lat + jy) * 100) / 100,
-      lng: Math.round((((country.lng + jx + 540) % 360) - 180) * 100) / 100,
-    };
-  }
-
   async function computeLive() {
     await releaseExpired();
     const cutoff = new Date(now().getTime() - config.activeAgentSeconds * 1000).toISOString();
@@ -1103,12 +1026,6 @@ export function createDomain({ db, github, config, clock }) {
       `SELECT COUNT(*) AS n FROM users u WHERE EXISTS (
         SELECT 1 FROM agents a WHERE a.user_id = u.id AND a.revoked_at = ''
       )`,
-    );
-    const countryCount = await db.get(
-      `SELECT COUNT(DISTINCT u.country_code) AS n FROM users u
-       WHERE u.country_code <> '' AND EXISTS (
-         SELECT 1 FROM agents a WHERE a.user_id = u.id AND a.revoked_at = ''
-       )`,
     );
     const pieces = await db.get(
       `SELECT
@@ -1128,41 +1045,8 @@ export function createDomain({ db, github, config, clock }) {
        )`,
       [cutoff],
     );
-    const dots = [];
-    for (const agent of active) {
-      const country = countryByCode(agent.country_code);
-      if (!country) continue;
-      const point = jitter(agent.id, country);
-      dots.push({
-        agent_id: agent.id,
-        name: agent.name,
-        login: agent.login,
-        country: country.code,
-        country_name: country.name,
-        lat: point.lat,
-        lng: point.lng,
-      });
-    }
     const feed = await db.all(
       `SELECT id, message, created_at, kind FROM events ORDER BY created_at DESC, id DESC LIMIT 30`,
-    );
-    const peopleBoard = await db.all(
-      `SELECT u.login, u.display_name, u.country_code AS country, COUNT(*) AS pieces
-       FROM pieces p
-       JOIN users u ON u.id = p.passed_by_user_id
-       JOIN missions m ON m.id = p.mission_id
-       WHERE p.status = 'passed' AND m.status = 'public'
-       GROUP BY u.id, u.login, u.display_name, u.country_code
-       ORDER BY pieces DESC, u.login ASC
-       LIMIT 10`,
-    );
-    const countryBoard = await db.all(
-      `SELECT p.passed_country AS country, COUNT(*) AS pieces
-       FROM pieces p JOIN missions m ON m.id = p.mission_id
-       WHERE p.status = 'passed' AND m.status = 'public' AND p.passed_country <> ''
-       GROUP BY p.passed_country
-       ORDER BY pieces DESC, p.passed_country ASC
-       LIMIT 10`,
     );
     const featuredRows = await db.all(
       `SELECT m.public_number AS number,
@@ -1178,24 +1062,11 @@ export function createDomain({ db, github, config, clock }) {
         agents: Number(agents?.n || 0),
         active_agents: active.length,
         people: Number(people?.n || 0),
-        countries: Number(countryCount?.n || 0),
         pieces_passed: Number(pieces?.passed || 0),
         pieces_total: Number(pieces?.total || 0),
         percent_done: percent(pieces?.passed, pieces?.total),
       },
-      dots,
       feed: feed.map((row) => ({ id: row.id, message: row.message, at: row.created_at, kind: row.kind })),
-      leaderboard_people: peopleBoard.map((row) => ({
-        login: row.login,
-        display_name: row.display_name,
-        country: row.country,
-        pieces: Number(row.pieces),
-      })),
-      leaderboard_countries: countryBoard.map((row) => ({
-        country: row.country,
-        name: countryByCode(row.country)?.name || row.country,
-        pieces: Number(row.pieces),
-      })),
       featured_mission_number: featured ? Number(featured.number) : 0,
       swarm: await swarm().totals(),
       leaderboard_agents: await swarm().leaderboard(10),
@@ -1251,16 +1122,13 @@ export function createDomain({ db, github, config, clock }) {
     userByLogin,
     agentByToken,
     touchAgent,
-    sessionById,
-    createSession,
-    destroySession,
-    upsertGitHubUser,
     createDemoUser,
-    updateProfile,
     createAgentToken,
+    registerAgent,
+    rotateAgentKey,
+    adminActor,
     revokeAgentToken,
     listAgents,
-    meView,
     listPublicMissions: async () => (await missionRows(`WHERE m.status = 'public'`, [])).map(card),
     missionDetail: async (ref, user) => {
       const mission = await findMission(ref);

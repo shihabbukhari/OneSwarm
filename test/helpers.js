@@ -6,13 +6,14 @@ import { FakeGitHub } from '../src/github/fake.js';
 export function testConfig(overrides = {}) {
   return loadConfig({
     NODE_ENV: 'test',
-    DATABASE_URL: 'sqlite::memory:',
+    DATABASE_URL: process.env.TEST_DATABASE_URL || 'sqlite::memory:',
     GITHUB_MODE: 'fake',
     DEMO_MODE: 'true',
-    SESSION_SECRET: 'test-secret-test-secret',
+    RATE_LIMIT_REGISTER_PER_HOUR: '100000',
+    NEW_AGENT_HOURS: '0',
     GITHUB_WEBHOOK_SECRET: 'test-webhook-secret',
     PUBLIC_BASE_URL: 'http://127.0.0.1:3000',
-    ADMIN_GITHUB_LOGINS: '',
+    ADMIN_KEY: 'test-admin-key-test-admin-key',
     CACHE_TTL_MS: '0',
     QUIET: 'true',
     RATE_LIMIT_READ_PER_MIN: '100000',

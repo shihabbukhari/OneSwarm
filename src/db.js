@@ -163,7 +163,11 @@ function schema(dialect) {
       )`,
     ],
     // Columns added after the first release. Older databases get them on start.
-    columns: [`ALTER TABLE agents ADD COLUMN about VARCHAR(280) NOT NULL DEFAULT ''`],
+    columns: [
+      dialect === 'postgres'
+        ? `ALTER TABLE agents ADD COLUMN IF NOT EXISTS about VARCHAR(280) NOT NULL DEFAULT ''`
+        : `ALTER TABLE agents ADD COLUMN about VARCHAR(280) NOT NULL DEFAULT ''`,
+    ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id)',
       'CREATE INDEX IF NOT EXISTS idx_agents_user ON agents (user_id)',
@@ -323,10 +327,107 @@ async function openMysql(url) {
   return db;
 }
 
+// The app writes SQL with ? placeholders. Postgres wants $1, $2, ... (quoted text is left alone).
+export function toPostgres(sql) {
+  let out = '';
+  let n = 0;
+  let quoted = false;
+  for (const ch of sql) {
+    if (ch === "'") quoted = !quoted;
+    if (ch === '?' && !quoted) {
+      n += 1;
+      out += `$${n}`;
+    } else {
+      out += ch;
+    }
+  }
+  return out;
+}
+
+function wrapPostgres({ run: execute, exec, transaction, close }) {
+  const enqueue = createMutex();
+  const shape = (result) => ({
+    rows: (result.rows || []).map((row) => plain(row)),
+    changes: Number(result.rowCount ?? result.affectedRows ?? 0),
+  });
+  const runner = (fn) => ({
+    all: async (sql, params = []) => shape(await fn(toPostgres(sql), params)).rows,
+    get: async (sql, params = []) => shape(await fn(toPostgres(sql), params)).rows[0] || null,
+    run: async (sql, params = []) => ({ changes: shape(await fn(toPostgres(sql), params)).changes }),
+  });
+  const direct = runner(execute);
+  return {
+    dialect: 'postgres',
+    close,
+    exec: (sql) => enqueue(() => exec(sql)),
+    all: (sql, params) => enqueue(() => direct.all(sql, params)),
+    get: (sql, params) => enqueue(() => direct.get(sql, params)),
+    run: (sql, params) => enqueue(() => direct.run(sql, params)),
+    transaction: (fn) => enqueue(() => transaction((query) => fn(runner(query)))),
+  };
+}
+
+async function openPostgres(url) {
+  const { default: pg } = await import('pg');
+  // Counts and sums come back as numbers, the same as SQLite and MySQL.
+  pg.types.setTypeParser(20, (value) => Number(value));
+  pg.types.setTypeParser(1700, (value) => Number(value));
+  const local = /@(localhost|127\.0\.0\.1)[:/]/.test(url);
+  const pool = new pg.Pool({
+    connectionString: url,
+    max: Number(process.env.DATABASE_POOL_MAX || 3),
+    idleTimeoutMillis: 10_000,
+    connectionTimeoutMillis: 8_000,
+    ssl: local ? false : { rejectUnauthorized: false },
+  });
+  return wrapPostgres({
+    run: (sql, params) => pool.query(sql, params),
+    exec: async (sql) => {
+      await pool.query(sql);
+    },
+    transaction: async (fn) => {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const value = await fn((sql, params) => client.query(sql, params));
+        await client.query('COMMIT');
+        return value;
+      } catch (error) {
+        try {
+          await client.query('ROLLBACK');
+        } catch {
+          // Surface the original error.
+        }
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+    close: () => pool.end(),
+  });
+}
+
+// In-memory Postgres for tests (npm run test:pg). Not used in production.
+async function openPglite() {
+  const { PGlite } = await import('@electric-sql/pglite');
+  const parsers = { 20: (value) => Number(value), 1700: (value) => Number(value) };
+  const pglite = new PGlite({ parsers });
+  return wrapPostgres({
+    run: (sql, params) => pglite.query(sql, params),
+    exec: async (sql) => {
+      await pglite.exec(sql);
+    },
+    transaction: (fn) => pglite.transaction((tx) => fn((sql, params) => tx.query(sql, params))),
+    close: () => pglite.close(),
+  });
+}
+
 export async function openDatabase(databaseUrl) {
   if (databaseUrl.startsWith('mysql://')) return openMysql(databaseUrl);
+  if (databaseUrl.startsWith('postgres://') || databaseUrl.startsWith('postgresql://')) return openPostgres(databaseUrl);
+  if (databaseUrl === 'pglite:memory') return openPglite();
   if (databaseUrl.startsWith('sqlite:')) return openSqlite(databaseUrl.slice('sqlite:'.length));
-  throw new Error('DATABASE_URL must start with sqlite: or mysql://');
+  throw new Error('DATABASE_URL must start with sqlite:, mysql://, postgres://, or postgresql://');
 }
 
 export async function migrate(db) {
@@ -336,7 +437,7 @@ export async function migrate(db) {
     try {
       await db.exec(sql);
     } catch (error) {
-      if (!/duplicate column/i.test(String(error.message))) throw error;
+      if (!/duplicate column|already exists/i.test(String(error.message))) throw error;
     }
   }
   for (const sql of indexes) {

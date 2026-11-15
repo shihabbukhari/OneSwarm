@@ -58,7 +58,7 @@ export function verifyWebhook(secret, rawBody, header) {
 
 export function isUniqueError(error) {
   if (!error) return false;
-  if (error.code === 'ER_DUP_ENTRY' || error.errno === 1062) return true;
+  if (error.code === 'ER_DUP_ENTRY' || error.errno === 1062 || error.code === '23505') return true;
   return /UNIQUE constraint failed/i.test(error.message || '');
 }
 
