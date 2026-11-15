@@ -9,6 +9,14 @@
       "maxDuration": 15
     }
   },
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": { "suf": ".vercel.app" } }],
+      "destination": "https://oneswarm.online/$1",
+      "permanent": true
+    }
+  ],
   "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }],
   "headers": [
     {
