@@ -1,3 +1,7 @@
+// p04: ATX heading level 1. A line that starts with "# " is an h1. Escape HTML in the text.
+// Replace this stub. Remove the STUB line, make match() return a positive score for
+// inputs this piece handles, and make render() return the HTML. Check it with:
+//   node checker/check.js --piece p04
 exports.STUB = true;
 exports.id = "p04";
 

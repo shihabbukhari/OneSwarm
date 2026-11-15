@@ -3,8 +3,7 @@ const { escapeHtml } = require('../html.js');
 exports.id = "p36";
 
 exports.match = function match(markdown) {
-  const inputs = new Set(["Say *hi* now"]);
-  return inputs.has(markdown) ? 100 : 0;
+  return /(^|[^*])\*[^*\s][^*\n]*\*(?!\*)/.test(markdown) ? 20 : 0;
 };
 
 exports.render = function render(markdown) {

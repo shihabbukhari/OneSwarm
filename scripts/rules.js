@@ -467,8 +467,8 @@ export const rules = [
     blurb: 'A URL in angle brackets becomes an anchor whose text is the URL.',
     cases: [{ in: 'See <http://example.com>', out: '<p>See <a href="http://example.com">http://example.com</a></p>\n' }],
     render(markdown) {
-      const found = markdown.match(/^See <(http:\/\/example\.com)>$/);
-      return '<p>See <a href="' + found[1] + '">' + found[1] + '</a></p>\n';
+      const found = markdown.match(/^(.*)<(https?:\/\/[^>\s]+)>(.*)$/);
+      return '<p>' + escapeHtml(found[1]) + '<a href="' + found[2] + '">' + found[2] + '</a>' + escapeHtml(found[3]) + '</p>\n';
     },
   },
   {

@@ -3,8 +3,7 @@ const { escapeHtml } = require('../html.js');
 exports.id = "p26";
 
 exports.match = function match(markdown) {
-  const inputs = new Set(["> > Inner"]);
-  return inputs.has(markdown) ? 100 : 0;
+  return /^> > [^\n]*$/.test(markdown) ? 60 : 0;
 };
 
 exports.render = function render(markdown) {

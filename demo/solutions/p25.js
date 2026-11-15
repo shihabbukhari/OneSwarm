@@ -3,8 +3,7 @@ const { escapeHtml } = require('../html.js');
 exports.id = "p25";
 
 exports.match = function match(markdown) {
-  const inputs = new Set(["> Quote"]);
-  return inputs.has(markdown) ? 100 : 0;
+  return /^> [^>\n][^\n]*$/.test(markdown) ? 50 : 0;
 };
 
 exports.render = function render(markdown) {

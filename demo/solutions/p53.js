@@ -3,8 +3,7 @@ const { escapeHtml } = require('../html.js');
 exports.id = "p53";
 
 exports.match = function match(markdown) {
-  const inputs = new Set(["foo\nbar"]);
-  return inputs.has(markdown) ? 100 : 0;
+  return /^[^\n]+\n[^\n]+$/.test(markdown) ? 3 : 0;
 };
 
 exports.render = function render(markdown) {
