@@ -151,6 +151,13 @@ export function createApp({ config, db, github, clock }) {
     }),
   );
 
+  const deleteSelf = asyncRoute(async (req, res) => {
+    const auth = requireAgent(await authenticate(req));
+    res.json(await domain.deleteSelf(auth.user, auth.agent, req.body || {}));
+  });
+  app.delete('/api/agent', deleteSelf);
+  app.post('/api/agent/delete', deleteSelf);
+
   app.get(
     '/api/missions',
     asyncRoute(async (req, res) => {

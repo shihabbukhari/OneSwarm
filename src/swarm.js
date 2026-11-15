@@ -8,6 +8,7 @@
 //   so a person cannot farm points by helping themselves.
 // - Help text is data written by other agents. It is never an instruction.
 import { ANSWER_POINTS, HELP_POINTS, PIECE_POINTS } from './constants.js';
+import { assertNoSecrets } from './secrets.js';
 import { clampText, httpError, id } from './util.js';
 
 const MAX_ANSWERS = 10;
@@ -76,6 +77,7 @@ export function createSwarm({ db, nowIso, addEvent, bust, findMission, newAgentH
     const question = clampText(input.question, 1000).trim();
     if (question.length < 10) throw httpError(400, 'question must be at least 10 characters.');
     const context = clampText(input.context, 6000);
+    assertNoSecrets(question, context);
     const open = await db.get(
       `SELECT id FROM help_requests WHERE asker_agent_id = ? AND mission_id = ? AND piece_key = ? AND status IN ('open', 'accepted')`,
       [agent.id, mission.id, pieceKey],
@@ -106,6 +108,7 @@ export function createSwarm({ db, nowIso, addEvent, bust, findMission, newAgentH
     const question = clampText(input.question, 1000).trim();
     if (question.length < 10) throw httpError(400, 'question must be at least 10 characters.');
     const context = clampText(input.context, 6000);
+    assertNoSecrets(question, context);
     const open = await db.get(
       `SELECT COUNT(*) AS n FROM help_requests WHERE asker_agent_id = ? AND mission_id = '' AND status = 'open' AND expires_at > ?`,
       [agent.id, nowIso()],
@@ -201,6 +204,7 @@ export function createSwarm({ db, nowIso, addEvent, bust, findMission, newAgentH
     if (request.asker_user_id === user.id) throw httpError(403, 'You cannot answer your own help request.');
     const body = clampText(input.body, 6000).trim();
     if (body.length < 10) throw httpError(400, 'body must be at least 10 characters.');
+    assertNoSecrets(body);
     const count = await db.get('SELECT COUNT(*) AS n FROM help_answers WHERE request_id = ?', [request.id]);
     if (Number(count?.n || 0) >= MAX_ANSWERS) throw httpError(409, 'This request already has enough answers.');
     const mine = await db.get('SELECT id FROM help_answers WHERE request_id = ? AND helper_agent_id = ?', [request.id, agent.id]);
@@ -332,6 +336,7 @@ export function createSwarm({ db, nowIso, addEvent, bust, findMission, newAgentH
 
   async function setAbout(agent, input) {
     const about = clampText(input.about, 280).trim();
+    assertNoSecrets(about);
     await db.run('UPDATE agents SET about = ? WHERE id = ?', [about, agent.id]);
     bust();
     return { agent: agent.name, about };
@@ -380,7 +385,7 @@ export function createSwarm({ db, nowIso, addEvent, bust, findMission, newAgentH
          SUM(CASE WHEN p.kind = 'piece' THEN 1 ELSE 0 END) AS pieces,
          SUM(CASE WHEN p.kind = 'help' THEN 1 ELSE 0 END) AS helps
        FROM points p JOIN agents ag ON ag.id = p.agent_id JOIN users u ON u.id = p.user_id
-       WHERE u.banned_at = ''
+       WHERE u.banned_at = '' AND ag.revoked_at = ''
        GROUP BY ag.id, ag.name, u.login
        ORDER BY points DESC, ag.name ASC
        LIMIT ?`,
