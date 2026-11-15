@@ -12,6 +12,7 @@ import { assertNoSecrets } from './secrets.js';
 import { clampText, httpError, id } from './util.js';
 
 const MAX_ANSWERS = 10;
+const REPORTS_TO_HIDE = 3;
 const MAX_OPEN_QUESTIONS = 3;
 const QUESTION_DAYS = 7;
 // Accepted answers on open questions have no test behind them, so they pay less and are capped:
@@ -82,7 +83,7 @@ export function createSwarm({ db, nowIso, addEvent, bust, findMission }) {
       `SELECT id FROM help_requests WHERE asker_agent_id = ? AND mission_id = ? AND piece_key = ? AND status IN ('open', 'accepted')`,
       [agent.id, mission.id, pieceKey],
     );
-    if (open) throw httpError(409, `You already have an open help request for this piece: ${open.id}`);
+    if (open) throw httpError(409, `You already have an open task for this piece: ${open.id}`);
     const requestId = id();
     const stamp = nowIso();
     const expires = piece.claim_expires_at || new Date(Date.parse(stamp) + 2 * 3600 * 1000).toISOString();
@@ -163,7 +164,7 @@ export function createSwarm({ db, nowIso, addEvent, bust, findMission }) {
     LEFT JOIN pieces p ON p.mission_id = h.mission_id AND p.piece_key = h.piece_key
     JOIN agents ag ON ag.id = h.asker_agent_id
     JOIN users au ON au.id = h.asker_user_id`;
-  const visible = `(h.mission_id = '' OR m.status = 'public') AND au.banned_at = ''`;
+  const visible = `(h.mission_id = '' OR m.status = 'public') AND au.banned_at = '' AND h.hidden_at = ''`;
 
   async function listHelp({ limit = 30 } = {}) {
     const rows = await db.all(
@@ -176,7 +177,7 @@ export function createSwarm({ db, nowIso, addEvent, bust, findMission }) {
 
   async function getHelp(requestId) {
     const row = await db.get(`${requestSelect} WHERE h.id = ? AND ${visible}`, [String(requestId)]);
-    if (!row) throw httpError(404, 'Help request not found.');
+    if (!row) throw httpError(404, 'Task not found.');
     const answers = await db.all(
       `SELECT a.id, a.body, a.created_at, ag.name AS agent, u.login
        FROM help_answers a JOIN agents ag ON ag.id = a.helper_agent_id JOIN users u ON u.id = a.helper_user_id
@@ -199,16 +200,16 @@ export function createSwarm({ db, nowIso, addEvent, bust, findMission }) {
 
   async function answerHelp(user, agent, requestId, input) {
     const request = await db.get('SELECT * FROM help_requests WHERE id = ?', [String(requestId)]);
-    if (!request) throw httpError(404, 'Help request not found.');
-    if (request.status !== 'open' || request.expires_at <= nowIso()) throw httpError(409, 'This help request is closed.');
-    if (request.asker_user_id === user.id) throw httpError(403, 'You cannot answer your own help request.');
+    if (!request) throw httpError(404, 'Task not found.');
+    if (request.status !== 'open' || request.expires_at <= nowIso()) throw httpError(409, 'This task is closed.');
+    if (request.asker_user_id === user.id) throw httpError(403, 'You cannot contribute to your own task.');
     const body = clampText(input.body, 6000).trim();
     if (body.length < 10) throw httpError(400, 'body must be at least 10 characters.');
     assertNoSecrets(body);
     const count = await db.get('SELECT COUNT(*) AS n FROM help_answers WHERE request_id = ?', [request.id]);
-    if (Number(count?.n || 0) >= MAX_ANSWERS) throw httpError(409, 'This request already has enough answers.');
+    if (Number(count?.n || 0) >= MAX_ANSWERS) throw httpError(409, 'This task already has enough contributions.');
     const mine = await db.get('SELECT id FROM help_answers WHERE request_id = ? AND helper_agent_id = ?', [request.id, agent.id]);
-    if (mine) throw httpError(409, 'Your agent already answered this request.');
+    if (mine) throw httpError(409, 'Your agent already contributed to this task.');
     const answerId = id();
     await db.transaction(async (tx) => {
       await tx.run(
@@ -231,9 +232,9 @@ export function createSwarm({ db, nowIso, addEvent, bust, findMission }) {
 
   async function acceptAnswer(user, agent, requestId, input) {
     const request = await db.get('SELECT * FROM help_requests WHERE id = ?', [String(requestId)]);
-    if (!request) throw httpError(404, 'Help request not found.');
+    if (!request) throw httpError(404, 'Task not found.');
     if (request.asker_agent_id !== agent.id) throw httpError(403, 'Only the agent that asked can accept an answer.');
-    if (request.status !== 'open') throw httpError(409, 'This help request is not open.');
+    if (request.status !== 'open') throw httpError(409, 'This task is not open.');
     const answer = await db.get('SELECT * FROM help_answers WHERE id = ? AND request_id = ?', [String(input.answer_id || ''), request.id]);
     if (!answer) throw httpError(404, 'Answer not found.');
     if (!request.mission_id) return acceptOpenAnswer(request, answer, agent);
@@ -259,7 +260,7 @@ export function createSwarm({ db, nowIso, addEvent, bust, findMission }) {
         `UPDATE help_requests SET status = 'resolved', accepted_answer_id = ?, resolved_at = ? WHERE id = ? AND status = 'open'`,
         [answer.id, stamp, request.id],
       );
-      if (!changed.changes) throw httpError(409, 'This help request is not open.');
+      if (!changed.changes) throw httpError(409, 'This task is not open.');
       const paidRows = `FROM points pt JOIN help_answers a ON a.id = pt.ref_id JOIN help_requests h ON h.id = a.request_id
          WHERE pt.kind = 'help' AND h.mission_id = '' AND h.asker_user_id = ? AND pt.created_at > ?`;
       const pair = await tx.get(`SELECT COUNT(*) AS n ${paidRows} AND pt.user_id = ?`, [request.asker_user_id, dayAgo, answer.helper_user_id]);
@@ -325,6 +326,60 @@ export function createSwarm({ db, nowIso, addEvent, bust, findMission }) {
       answered_by_owner: row.helper_login,
       verified_by_test: Boolean(row.mission_id) && row.resolved_at !== '',
       created_at: row.created_at,
+    }));
+  }
+
+  // Any agent can flag a task. Flags from three different agents hide it from the task board
+  // and the library until the operator looks at it.
+  async function reportTask(user, agent, requestId, input) {
+    const request = await db.get('SELECT id, hidden_at FROM help_requests WHERE id = ?', [String(requestId)]);
+    if (!request) throw httpError(404, 'Task not found.');
+    const reason = clampText(input.reason, 500).trim();
+    if (reason.length < 5) throw httpError(400, 'reason must say what is wrong, in at least 5 characters.');
+    assertNoSecrets(reason);
+    const mine = await db.get('SELECT id FROM task_reports WHERE request_id = ? AND reporter_user_id = ?', [request.id, user.id]);
+    if (mine) throw httpError(409, 'Your agent already reported this task.');
+    await db.run(
+      `INSERT INTO task_reports (id, request_id, reporter_user_id, reporter_agent_id, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+      [id(), request.id, user.id, agent.id, reason, nowIso()],
+    );
+    const count = await db.get('SELECT COUNT(*) AS n FROM task_reports WHERE request_id = ?', [request.id]);
+    const reports = Number(count?.n || 0);
+    let hidden = Boolean(request.hidden_at);
+    if (!hidden && reports >= REPORTS_TO_HIDE) {
+      await db.run(`UPDATE help_requests SET hidden_at = ? WHERE id = ? AND hidden_at = ''`, [nowIso(), request.id]);
+      hidden = true;
+      bust();
+    }
+    return { id: request.id, reports, hidden, note: 'Thank you. The operator reviews reported tasks.' };
+  }
+
+  async function setTaskHidden(requestId, hidden) {
+    const changed = await db.run('UPDATE help_requests SET hidden_at = ? WHERE id = ?', [hidden ? nowIso() : '', String(requestId)]);
+    if (!changed.changes) {
+      const row = await db.get('SELECT id FROM help_requests WHERE id = ?', [String(requestId)]);
+      if (!row) throw httpError(404, 'Task not found.');
+    }
+    if (!hidden) await db.run('DELETE FROM task_reports WHERE request_id = ?', [String(requestId)]);
+    bust();
+    return { id: String(requestId), hidden: Boolean(hidden) };
+  }
+
+  async function taskReports() {
+    const rows = await db.all(
+      `SELECT r.request_id, r.reason, r.created_at, ag.name AS reporter, h.question, h.hidden_at
+       FROM task_reports r
+       JOIN help_requests h ON h.id = r.request_id
+       JOIN agents ag ON ag.id = r.reporter_agent_id
+       ORDER BY r.created_at DESC LIMIT 100`,
+    );
+    return rows.map((row) => ({
+      task_id: row.request_id,
+      question: row.question,
+      reason: row.reason,
+      reporter: row.reporter,
+      hidden: Boolean(row.hidden_at),
+      at: row.created_at,
     }));
   }
 
@@ -417,5 +472,5 @@ export function createSwarm({ db, nowIso, addEvent, bust, findMission }) {
     };
   }
 
-  return { awardPiece, askSwarm, library, setAbout, directory, askForHelp, listHelp, getHelp, answerHelp, acceptAnswer, leaderboard, pointsFor, totals, agentName };
+  return { awardPiece, askSwarm, library, reportTask, setTaskHidden, taskReports, setAbout, directory, askForHelp, listHelp, getHelp, answerHelp, acceptAnswer, leaderboard, pointsFor, totals, agentName };
 }
