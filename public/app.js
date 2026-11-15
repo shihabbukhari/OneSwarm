@@ -394,8 +394,21 @@ function agentWire() {
     return { row, msg };
   }
 
+  function nearBottom() {
+    return body.scrollHeight - body.scrollTop - body.clientHeight < 40;
+  }
+
+  let follow = true;
+  body.addEventListener('scroll', () => {
+    follow = nearBottom();
+  });
+
+  function pin() {
+    if (follow) body.scrollTop = body.scrollHeight;
+  }
+
   function trim() {
-    while (body.children.length > 9) body.firstChild.remove();
+    while (body.children.length > 50) body.firstChild.remove();
   }
 
   function next() {
@@ -409,6 +422,7 @@ function agentWire() {
     const { row, msg } = lineNode(line);
     body.append(row);
     trim();
+    pin();
     const caret = el('span', 'caret');
     msg.append(caret);
     let i = 0;
@@ -417,6 +431,7 @@ function agentWire() {
       if (!box.isConnected) return;
       i = Math.min(line.msg.length, i + 2);
       msg.firstChild && msg.firstChild.nodeType === 3 ? (msg.firstChild.textContent = line.msg.slice(0, i)) : msg.prepend(document.createTextNode(line.msg.slice(0, i)));
+      pin();
       if (i < line.msg.length) timer = window.setTimeout(type, step);
       else {
         caret.remove();
@@ -439,6 +454,7 @@ function agentWire() {
           msg.textContent = line.msg;
           body.append(row);
         }
+        pin();
         return;
       }
       if (!first) {
@@ -459,6 +475,7 @@ function agentWire() {
           msg.textContent = line.msg;
           body.append(row);
         }
+        pin();
         window.clearTimeout(timer);
         next();
       }
@@ -476,7 +493,89 @@ function agentGraph() {
   const legend = el('div', 'graph-legend');
   const count = el('span', '', '');
   legend.append(el('span', 'pulse'), count);
-  wrap.append(canvas, legend);
+  const tools = el('div', 'graph-zoom');
+  let zoom = 1;
+  let panX = 0;
+  let panY = 0;
+
+  function clampView() {
+    zoom = Math.min(3, Math.max(0.65, zoom));
+    const limitX = Math.max(80, size.w * 0.75);
+    const limitY = Math.max(80, size.h * 0.75);
+    panX = Math.max(-limitX, Math.min(limitX, panX));
+    panY = Math.max(-limitY, Math.min(limitY, panY));
+  }
+
+  function zoomAt(factor, origin) {
+    if (!size.w) measure();
+    const cx = size.w / 2;
+    const cy = size.h / 2;
+    const ox = origin ? origin.x : cx;
+    const oy = origin ? origin.y : cy;
+    const worldX = cx + (ox - cx - panX) / zoom;
+    const worldY = cy + (oy - cy - panY) / zoom;
+    zoom *= factor;
+    clampView();
+    panX = ox - cx - (worldX - cx) * zoom;
+    panY = oy - cy - (worldY - cy) * zoom;
+    clampView();
+  }
+
+  function resetView() {
+    zoom = 1;
+    panX = 0;
+    panY = 0;
+  }
+
+  function zoomButton(label, name, action) {
+    const button = el('button', '', label);
+    button.type = 'button';
+    button.setAttribute('aria-label', name);
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      action();
+    });
+    return button;
+  }
+  tools.append(
+    zoomButton('+', 'Zoom in', () => zoomAt(1.2)),
+    zoomButton('−', 'Zoom out', () => zoomAt(1 / 1.2)),
+    zoomButton('↺', 'Reset zoom', resetView),
+  );
+  wrap.append(canvas, tools, legend);
+
+  canvas.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    zoomAt(event.deltaY < 0 ? 1.12 : 0.9, {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    });
+  }, { passive: false });
+  let drag = null;
+  canvas.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+    drag = { x: event.clientX, y: event.clientY, id: event.pointerId };
+    canvas.setPointerCapture(event.pointerId);
+  });
+  canvas.addEventListener('pointermove', (event) => {
+    if (!drag || drag.id !== event.pointerId) return;
+    panX += event.clientX - drag.x;
+    panY += event.clientY - drag.y;
+    drag.x = event.clientX;
+    drag.y = event.clientY;
+    clampView();
+  });
+  function endDrag(event) {
+    if (drag && drag.id === event.pointerId) drag = null;
+  }
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+  canvas.addEventListener('dblclick', (event) => {
+    event.preventDefault();
+    resetView();
+  });
 
   const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   let nodes = [];
@@ -637,9 +736,10 @@ function agentGraph() {
     });
   }
 
-  function paintLabels(ctx, points) {
+  function paintLabels(ctx, points, nodeScale) {
     ctx.save();
-    ctx.font = '600 12px ui-monospace, SFMono-Regular, Menlo, monospace';
+    const fontSize = Math.round(12 * Math.min(Math.max(zoom, 0.9), 1.5));
+    ctx.font = `600 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
     ctx.textBaseline = 'middle';
     const placed = [];
     const margin = 14;
@@ -658,7 +758,7 @@ function agentGraph() {
       const uy = Math.sin(angle);
       const tx = -uy;
       const ty = ux;
-      const gap = n.r + 18;
+      const gap = nodeScale + 14;
       const spots = [0, 22, -22, 44, -44].map((shift) => {
         const cx = p.x + ux * (gap + boxW / 2) + tx * shift;
         const cy = p.y + uy * (gap + boxH / 2) + ty * shift;
@@ -703,12 +803,17 @@ function agentGraph() {
     ctx.setTransform(size.ratio, 0, 0, size.ratio, 0, 0);
     ctx.clearRect(0, 0, size.w, size.h);
     paintField(ctx);
-    const scale = Math.max(1, Math.min(1.8, Math.min(size.w, size.h) / 420));
+    const scale = Math.max(1, Math.min(1.35, Math.min(size.w, size.h) / 420));
+    const view = Math.max(0.8, Math.min(zoom, 2.2));
     const drift = still ? 0 : 0.006;
-    const P = (n) => ({
-      x: (n.x + Math.cos(time / 2600 + n.phase) * drift) * size.w,
-      y: (n.y + Math.sin(time / 2200 + n.phase) * drift) * size.h,
-    });
+    const P = (n) => {
+      const x = (n.x + Math.cos(time / 2600 + n.phase) * drift) * size.w;
+      const y = (n.y + Math.sin(time / 2200 + n.phase) * drift) * size.h;
+      return {
+        x: size.w / 2 + (x - size.w / 2) * zoom + panX,
+        y: size.h / 2 + (y - size.h / 2) * zoom + panY,
+      };
+    };
 
     for (const e of edges) {
       const a = P(nodes[e.a]);
@@ -748,17 +853,17 @@ function agentGraph() {
       ctx.strokeStyle = hot ? accent : 'rgba(107, 227, 255, 0.4)';
       ctx.lineWidth = 1.15;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, n.r * scale + 5, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, n.r * scale * view + 5, 0, Math.PI * 2);
       ctx.stroke();
       ctx.fillStyle = hot ? accent : agent;
       ctx.shadowColor = hot ? accent : agent;
       ctx.shadowBlur = (hot ? 16 : n.label ? 10 : 0) * scale;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, n.r * scale, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, n.r * scale * view, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
     });
-    if (size.w > 360) paintLabels(ctx, points);
+    if (size.w > 280) paintLabels(ctx, points, scale * view);
     if (!still) frame = requestAnimationFrame(draw);
   }
 
