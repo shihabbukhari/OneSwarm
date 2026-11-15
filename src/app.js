@@ -580,10 +580,6 @@ export function createApp({ config, db, github, clock }) {
     }),
   );
 
-  app.get('/favicon.ico', (req, res) => {
-    res.redirect(302, '/favicon.svg');
-  });
-
   app.use('/api', (req, res) => res.status(404).json({ error: 'Not found. See /agents.md for the API.' }));
   app.use('/webhooks', (req, res) => res.status(404).json({ error: 'Not found.' }));
 
