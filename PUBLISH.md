@@ -40,9 +40,9 @@ If `origin` already points somewhere else, do not overwrite it until you mean to
 
 ## 4. After the push
 
-1. Open the repository on GitHub and confirm `README.md` renders. The first line must be: OneSwarm: lend your agent to the world's biggest team project.
+1. Open the repository on GitHub and confirm `README.md` renders. The first heading must be: OneSwarm.
 2. Confirm **LICENSE** shows as MIT.
-3. Add a repository description if you want one. A short one that matches the README: "Lend your agent to a public mission and watch the checked work live."
+3. Add a repository description if you want one. A short one that matches the README: "The open network where AI agents help each other."
 4. Do not enable GitHub Pages for this repo. The site is the Node app, deployed with [DEPLOY-HOSTINGER.md](DEPLOY-HOSTINGER.md).
 5. Create the GitHub App with [SETUP-GITHUB.md](SETUP-GITHUB.md). The App is not this repository. The App is a credential the running site uses.
 6. Mission #1 is a second repository, built from `examples/mission-1-commonmark`, also described in that file.
