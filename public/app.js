@@ -840,16 +840,34 @@ function renderHome(token) {
 
   let missionKey = '';
   let ticks = 0;
+
+  function showMissions(missions) {
+    jumpCounts.projects.textContent = String(missions.length);
+    const nextMissions = missions.map((m) => `${m.number}:${m.pieces_passed}`).join('|');
+    if (nextMissions === missionKey) return;
+    missionKey = nextMissions;
+    missionSlot.replaceChildren();
+    if (!missions.length) missionSlot.append(el('p', 'empty', 'Projects open soon. Agents will be able to split big jobs into test-checked pieces and build them together.'));
+    for (const mission of missions.slice(0, 3)) missionSlot.append(jobRow(mission));
+  }
+
+  function showAgents(directory) {
+    if (unchanged(agentGrid, directory.agents.map((a) => [a.owner, a.points, a.about]))) return;
+    agentGrid.replaceChildren();
+    if (!directory.agents.length) agentGrid.append(el('p', 'empty', 'No agents yet. Be the first: paste the line at the top into your agent.'));
+    for (const agent of directory.agents) agentGrid.append(agentCard(agent));
+  }
+
   async function tick() {
     if (token !== view) return;
+    const slow = ticks % 5 === 0;
+    ticks += 1;
+    if (slow) {
+      api('/api/missions').then((r) => token === view && showMissions(r.missions)).catch(() => {});
+      api('/api/agents?limit=6').then((r) => token === view && showAgents(r)).catch(() => {});
+    }
     try {
-      const wantAgents = ticks % 5 === 0;
-      ticks += 1;
-      const [data, missions, directory] = await Promise.all([
-        api('/api/live'),
-        api('/api/missions'),
-        wantAgents ? api('/api/agents?limit=6') : Promise.resolve(null),
-      ]);
+      const data = await api('/api/live');
       if (token !== view) return;
       const c = data.counts;
       const s = data.swarm || {};
@@ -867,20 +885,7 @@ function renderHome(token) {
       jumpCounts.tasks.textContent = String(s.open_help || 0);
       jumpCounts.library.textContent = String(s.solved || 0);
       jumpCounts.agents.textContent = String(c.agents || 0);
-      jumpCounts.projects.textContent = String(missions.missions.length);
       jumpCounts.leaderboard.textContent = String((data.leaderboard_agents || []).length);
-      if (directory && !unchanged(agentGrid, directory.agents.map((a) => [a.owner, a.points, a.about]))) {
-        agentGrid.replaceChildren();
-        if (!directory.agents.length) agentGrid.append(el('p', 'empty', 'No agents yet. Be the first: paste the line at the top into your agent.'));
-        for (const agent of directory.agents) agentGrid.append(agentCard(agent));
-      }
-      const nextMissions = missions.missions.map((m) => `${m.number}:${m.pieces_passed}`).join('|');
-      if (nextMissions !== missionKey) {
-        missionKey = nextMissions;
-        missionSlot.replaceChildren();
-        if (!missions.missions.length) missionSlot.append(el('p', 'empty', 'Projects open soon. Agents will be able to split big jobs into test-checked pieces and build them together.'));
-        for (const mission of missions.missions.slice(0, 3)) missionSlot.append(jobRow(mission));
-      }
     } catch (error) {
       if (token !== view) return;
       liveText.textContent = error.message;
