@@ -1,0 +1,13 @@
+const { escapeHtml } = require('../html.js');
+
+exports.id = "p23";
+
+exports.match = function match(markdown) {
+  const inputs = new Set(["```\n<b>\n```"]);
+  return inputs.has(markdown) ? 100 : 0;
+};
+
+exports.render = function render(markdown) {
+const inner = markdown.replace(/^```\n/, '').replace(/\n```$/, '');
+      return '<pre><code>' + escapeHtml(inner) + '\n</code></pre>\n';
+};

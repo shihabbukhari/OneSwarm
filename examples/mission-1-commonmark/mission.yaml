@@ -1,0 +1,285 @@
+version: 1
+title: "CommonMark-style Markdown to HTML"
+summary: "Build a small Markdown-to-HTML library, one checked piece at a time."
+goal: "Build a Markdown-to-HTML library from scratch. Each piece renders one group of cases inspired by a CommonMark section. The checker on main decides what passes."
+license: MIT
+kind: team
+checker:
+  workflow: check.yml
+  name: OneSwarm Check
+pieces:
+  - id: p01
+    title: "Empty document"
+    description: "An empty document renders as an empty string."
+    paths:
+      - src/pieces/p01.js
+  - id: p02
+    title: "Paragraph"
+    description: "Wrap a single line of plain text in a paragraph. Escape HTML."
+    paths:
+      - src/pieces/p02.js
+  - id: p03
+    title: "Two paragraphs"
+    description: "A blank line splits two paragraphs."
+    paths:
+      - src/pieces/p03.js
+  - id: p04
+    title: "ATX heading level 1"
+    description: "A line that starts with \"# \" is an h1. Escape HTML in the text."
+    paths:
+      - src/pieces/p04.js
+  - id: p05
+    title: "ATX heading level 2"
+    description: "A line that starts with \"## \" is an h2."
+    paths:
+      - src/pieces/p05.js
+  - id: p06
+    title: "ATX heading level 3"
+    description: "A line that starts with \"### \" is an h3."
+    paths:
+      - src/pieces/p06.js
+  - id: p07
+    title: "ATX heading level 4"
+    description: "A line that starts with \"#### \" is an h4."
+    paths:
+      - src/pieces/p07.js
+  - id: p08
+    title: "ATX heading level 5"
+    description: "A line that starts with \"##### \" is an h5."
+    paths:
+      - src/pieces/p08.js
+  - id: p09
+    title: "ATX heading level 6"
+    description: "A line that starts with \"###### \" is an h6."
+    paths:
+      - src/pieces/p09.js
+  - id: p10
+    title: "ATX heading with a closing hash"
+    description: "Strip a closing hash sequence from an h1."
+    paths:
+      - src/pieces/p10.js
+  - id: p11
+    title: "ATX h2 with closing hashes"
+    description: "Strip closing hashes from an h2."
+    paths:
+      - src/pieces/p11.js
+  - id: p12
+    title: "Setext heading level 1"
+    description: "A line followed by equals signs is an h1."
+    paths:
+      - src/pieces/p12.js
+  - id: p13
+    title: "Setext heading level 2"
+    description: "A line followed by dashes is an h2."
+    paths:
+      - src/pieces/p13.js
+  - id: p14
+    title: "Thematic break of stars"
+    description: "Three or more stars on a line are a horizontal rule."
+    paths:
+      - src/pieces/p14.js
+  - id: p15
+    title: "Thematic break of dashes"
+    description: "Three or more dashes on a line are a horizontal rule."
+    paths:
+      - src/pieces/p15.js
+  - id: p16
+    title: "Thematic break of underscores"
+    description: "Three or more underscores on a line are a horizontal rule."
+    paths:
+      - src/pieces/p16.js
+  - id: p17
+    title: "Spaced thematic break"
+    description: "Stars separated by spaces are still a horizontal rule."
+    paths:
+      - src/pieces/p17.js
+  - id: p18
+    title: "Long thematic break"
+    description: "More than three stars are still one horizontal rule."
+    paths:
+      - src/pieces/p18.js
+  - id: p19
+    title: "Indented code block"
+    description: "Four spaces start a code block. Escape HTML inside it."
+    paths:
+      - src/pieces/p19.js
+  - id: p20
+    title: "Fenced code with backticks"
+    description: "A backtick fence wraps a code block."
+    paths:
+      - src/pieces/p20.js
+  - id: p21
+    title: "Fenced code with tildes"
+    description: "A tilde fence wraps a code block."
+    paths:
+      - src/pieces/p21.js
+  - id: p22
+    title: "Fenced code with a language"
+    description: "Put the info string on the code element as a language class."
+    paths:
+      - src/pieces/p22.js
+  - id: p23
+    title: "Escape HTML in a code fence"
+    description: "HTML inside a fence is escaped, not rendered."
+    paths:
+      - src/pieces/p23.js
+  - id: p24
+    title: "Code fence keeps stars"
+    description: "Stars inside a fence stay as text. They are not a thematic break."
+    paths:
+      - src/pieces/p24.js
+  - id: p25
+    title: "Block quote"
+    description: "A line that starts with \"> \" is a block quote containing a paragraph."
+    paths:
+      - src/pieces/p25.js
+  - id: p26
+    title: "Nested block quote"
+    description: "Two quote markers nest one block quote inside another."
+    paths:
+      - src/pieces/p26.js
+  - id: p27
+    title: "Multi-line block quote"
+    description: "Consecutive quote lines join into one quoted paragraph, keeping the line break."
+    paths:
+      - src/pieces/p27.js
+  - id: p28
+    title: "Dash list"
+    description: "A line starting with \"- \" is a one-item unordered list."
+    paths:
+      - src/pieces/p28.js
+  - id: p29
+    title: "Star list"
+    description: "A line starting with \"* \" is a one-item unordered list."
+    paths:
+      - src/pieces/p29.js
+  - id: p30
+    title: "Plus list"
+    description: "A line starting with \"+ \" is a one-item unordered list."
+    paths:
+      - src/pieces/p30.js
+  - id: p31
+    title: "Two-item dash list"
+    description: "Two dash lines become two list items."
+    paths:
+      - src/pieces/p31.js
+  - id: p32
+    title: "Ordered list"
+    description: "A line starting with \"1. \" is an ordered list."
+    paths:
+      - src/pieces/p32.js
+  - id: p33
+    title: "Ordered list start number"
+    description: "The number before the dot becomes the start attribute."
+    paths:
+      - src/pieces/p33.js
+  - id: p34
+    title: "Two-digit ordered list"
+    description: "A start number with two digits is kept."
+    paths:
+      - src/pieces/p34.js
+  - id: p35
+    title: "Two ordered items"
+    description: "Two numbered lines become two ordered list items."
+    paths:
+      - src/pieces/p35.js
+  - id: p36
+    title: "Emphasis with stars"
+    description: "A single pair of stars wraps emphasis inside a paragraph."
+    paths:
+      - src/pieces/p36.js
+  - id: p37
+    title: "Emphasis with underscores"
+    description: "A single pair of underscores wraps emphasis inside a paragraph."
+    paths:
+      - src/pieces/p37.js
+  - id: p38
+    title: "Strong emphasis with stars"
+    description: "A double pair of stars wraps strong emphasis."
+    paths:
+      - src/pieces/p38.js
+  - id: p39
+    title: "Strong emphasis with underscores"
+    description: "A double pair of underscores wraps strong emphasis."
+    paths:
+      - src/pieces/p39.js
+  - id: p40
+    title: "Inline code"
+    description: "A single pair of backticks wraps inline code."
+    paths:
+      - src/pieces/p40.js
+  - id: p41
+    title: "Inline code with a longer fence"
+    description: "A double-backtick code span can contain a single backtick."
+    paths:
+      - src/pieces/p41.js
+  - id: p42
+    title: "Inline link"
+    description: "Turn [text](url) into an anchor inside a paragraph."
+    paths:
+      - src/pieces/p42.js
+  - id: p43
+    title: "Link with a title"
+    description: "A quoted title in a link becomes a title attribute."
+    paths:
+      - src/pieces/p43.js
+  - id: p44
+    title: "Autolink"
+    description: "A URL in angle brackets becomes an anchor whose text is the URL."
+    paths:
+      - src/pieces/p44.js
+  - id: p45
+    title: "Image"
+    description: "Turn ![alt](url) into an image inside a paragraph."
+    paths:
+      - src/pieces/p45.js
+  - id: p46
+    title: "Image with a title"
+    description: "A quoted title on an image becomes a title attribute."
+    paths:
+      - src/pieces/p46.js
+  - id: p47
+    title: "Escape image alt text"
+    description: "Escape HTML characters in image alt text."
+    paths:
+      - src/pieces/p47.js
+  - id: p48
+    title: "Backslash escape"
+    description: "A backslash before a star renders the star as text."
+    paths:
+      - src/pieces/p48.js
+  - id: p49
+    title: "Escape raw HTML"
+    description: "Angle brackets in a paragraph are escaped."
+    paths:
+      - src/pieces/p49.js
+  - id: p50
+    title: "Escape ampersands"
+    description: "An ampersand in a paragraph is escaped."
+    paths:
+      - src/pieces/p50.js
+  - id: p51
+    title: "Escape quotes"
+    description: "Double quotes in a paragraph are escaped."
+    paths:
+      - src/pieces/p51.js
+  - id: p52
+    title: "Hard line break"
+    description: "Two spaces before a newline become a br tag."
+    paths:
+      - src/pieces/p52.js
+  - id: p53
+    title: "Soft line break"
+    description: "A single newline inside a paragraph stays a newline."
+    paths:
+      - src/pieces/p53.js
+  - id: p54
+    title: "Emphasis inside a heading"
+    description: "An h1 may contain star emphasis."
+    paths:
+      - src/pieces/p54.js
+  - id: p55
+    title: "Emphasis inside a list item"
+    description: "A dash list item may contain star emphasis."
+    paths:
+      - src/pieces/p55.js

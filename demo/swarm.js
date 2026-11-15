@@ -1,0 +1,177 @@
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { signWebhook } from '../src/util.js';
+import { runChecker } from './checker-runner.js';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const missionDir = path.join(root, 'examples', 'mission-1-commonmark');
+const solutionDir = path.join(root, 'demo', 'solutions');
+
+const COUNTRIES = ['BD', 'IN', 'US', 'GB', 'DE', 'BR', 'JP', 'NG', 'KE', 'FR', 'CA', 'AU', 'MX', 'ID', 'SE', 'ZA'];
+
+export function readTree(dir, base = dir) {
+  const files = {};
+  for (const entry of readdirSync(dir)) {
+    if (entry === '.DS_Store') continue;
+    const full = path.join(dir, entry);
+    const rel = path.relative(base, full).split(path.sep).join('/');
+    if (statSync(full).isDirectory()) Object.assign(files, readTree(full, base));
+    else files[rel] = readFileSync(full, 'utf8');
+  }
+  return files;
+}
+
+export async function seedMissionOne({ domain, github, admin }) {
+  github.seedRepo({
+    owner: 'oneswarm-demo',
+    repo: 'commonmark-html',
+    files: readTree(missionDir),
+  });
+  const pending = await domain.submitMission(admin, {
+    repo_url: 'https://github.com/oneswarm-demo/commonmark-html',
+    reward_amount: '100',
+    reward_currency: 'USD',
+    reward_rules: 'The poster pays the person with the most passed pieces by the method they name.',
+  });
+  return domain.approveMission(admin, pending.id);
+}
+
+function breakRender(source) {
+  const marker = 'exports.render = function render(markdown) {';
+  const at = source.indexOf(marker);
+  if (at < 0) throw new Error('Could not rewrite a solution renderer.');
+  return `${source.slice(0, at)}exports.render = function render() {\n  return "<p>nope</p>\\n";\n};\n`;
+}
+
+export async function runSwarm({ baseUrl, domain, github, config, paceMs = 0 }) {
+  const tokens = [];
+  for (let index = 0; index < 40; index += 1) {
+    const user = await domain.createDemoUser({
+      login: `pilot-${index}`,
+      displayName: `Pilot ${index}`,
+      countryCode: COUNTRIES[index % COUNTRIES.length],
+    });
+    const perPerson = index < 10 ? 2 : 1;
+    for (let agentIndex = 0; agentIndex < perPerson; agentIndex += 1) {
+      const issued = await domain.createAgentToken(user, agentIndex === 0 ? 'OpenClaw' : 'Second');
+      tokens.push(issued.token);
+    }
+  }
+  if (tokens.length !== 50) throw new Error(`Expected 50 agents, got ${tokens.length}`);
+
+  const claims = [];
+  for (const token of tokens) {
+    const response = await fetch(`${baseUrl}/api/missions/1/claim`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(`Claim failed: ${JSON.stringify(body)}`);
+    claims.push({ token, piece: body.piece });
+  }
+
+  const behaviors = [
+    ...Array(40).fill('good'),
+    'greedy',
+    ...Array(5).fill('bad'),
+    ...Array(2).fill('tests'),
+    ...Array(2).fill('workflow'),
+  ];
+  const summary = { merged: 0, failed: 0, rejected: 0 };
+
+  for (let index = 0; index < claims.length; index += 1) {
+    if (paceMs) await new Promise((resolve) => setTimeout(resolve, paceMs));
+    const behavior = behaviors[index];
+    const { token, piece } = claims[index];
+    const solution = readFileSync(path.join(solutionDir, `${piece.key}.js`), 'utf8');
+    const pieceFile = { filename: piece.paths[0], content: solution };
+    let files = [pieceFile];
+    if (behavior === 'greedy') {
+      if (!solution.includes('return inputs.has(markdown) ? 100 : 0;')) {
+        throw new Error(`Greedy rewrite missed ${piece.key}`);
+      }
+      files = [{
+        filename: piece.paths[0],
+        content: solution.replace('return inputs.has(markdown) ? 100 : 0;', 'return 100;'),
+      }];
+    } else if (behavior === 'bad') {
+      files = [{ filename: piece.paths[0], content: breakRender(solution) }];
+    } else if (behavior === 'tests') {
+      files = [pieceFile, { filename: 'tests/fixtures.js', content: 'module.exports = {};\n' }];
+    } else if (behavior === 'workflow') {
+      files = [pieceFile, { filename: '.github/workflows/check.yml', content: 'name: hacked\n' }];
+    }
+
+    const pull = await github.openPullRequest({
+      owner: 'oneswarm-demo',
+      repo: 'commonmark-html',
+      title: piece.key,
+      files,
+    });
+    const report = await fetch(`${baseUrl}/api/missions/1/submissions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ piece_key: piece.key, pr_number: pull.number }),
+    });
+    const reported = await report.json();
+    if (behavior === 'tests' || behavior === 'workflow') {
+      if (reported.status !== 'rejected') {
+        throw new Error(`Protected submission was not rejected: ${JSON.stringify(reported)}`);
+      }
+      summary.rejected += 1;
+      continue;
+    }
+    if (!report.ok) throw new Error(`Report failed: ${JSON.stringify(reported)}`);
+
+    const checked = await runChecker({
+      tree: github.tree('oneswarm-demo', 'commonmark-html'),
+      overlay: files,
+      pieceKey: piece.key,
+    });
+    await github.setCheck({
+      owner: 'oneswarm-demo',
+      repo: 'commonmark-html',
+      sha: pull.headSha,
+      name: 'OneSwarm Check',
+      path: '.github/workflows/check.yml',
+      conclusion: checked.ok ? 'success' : 'failure',
+      summary: checked.log,
+    });
+    const payload = {
+      action: 'completed',
+      installation: { id: 1 },
+      repository: { name: 'commonmark-html', owner: { login: 'oneswarm-demo' } },
+      workflow_run: {
+        name: 'OneSwarm Check',
+        conclusion: checked.ok ? 'success' : 'failure',
+        head_sha: pull.headSha,
+        path: '.github/workflows/check.yml',
+        pull_requests: [{ number: pull.number }],
+      },
+    };
+    const raw = Buffer.from(JSON.stringify(payload));
+    const hook = await fetch(`${baseUrl}/webhooks/github`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-hub-signature-256': signWebhook(config.webhookSecret, raw),
+        'x-github-delivery': `demo-${pull.number}-${index}`,
+        'x-github-event': 'workflow_run',
+      },
+      body: raw,
+    });
+    const hookBody = await hook.json();
+    if (!hook.ok) throw new Error(`Webhook failed: ${JSON.stringify(hookBody)}`);
+    if (behavior === 'good' && hookBody.status !== 'merged') {
+      throw new Error(`Expected merge for ${piece.key}: ${JSON.stringify(hookBody)} ${checked.log}`);
+    }
+    if (behavior !== 'good' && hookBody.status !== 'failed') {
+      throw new Error(`Expected failure for ${piece.key}: ${JSON.stringify(hookBody)}`);
+    }
+    if (hookBody.status === 'merged') summary.merged += 1;
+    if (hookBody.status === 'failed') summary.failed += 1;
+  }
+  return summary;
+}

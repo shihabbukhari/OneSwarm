@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "node --test --test-concurrency=1 --test-timeout=180000",
+    "test": "node --test --test-concurrency=1 --test-timeout=180000 test/*.test.js",
     "demo": "node demo/run.js",
     "materialize": "node scripts/materialize-mission.js"
   },

@@ -1,0 +1,6 @@
+{
+  "name": "oneswarm-mission-template",
+  "private": true,
+  "type": "commonjs",
+  "description": "A two-piece template for a team mission."
+}

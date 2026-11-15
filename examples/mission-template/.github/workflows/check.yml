@@ -1,0 +1,40 @@
+name: OneSwarm Check
+on:
+  pull_request:
+jobs:
+  check:
+    name: OneSwarm Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Reject edits to the checker and tests
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          protected=$(git diff --name-only FETCH_HEAD HEAD -- tests checker mission.yaml .github src/index.js src/html.js package.json README.md LICENSE)
+          if [ -n "$protected" ]; then
+            echo "Protected files changed" >&2
+            printf '%s\n' "$protected" >&2
+            exit 1
+          fi
+      - name: Restore checker and tests from the base branch
+        run: |
+          git checkout FETCH_HEAD -- tests checker mission.yaml .github src/index.js src/html.js package.json README.md LICENSE
+      - name: Detect the piece
+        id: piece
+        run: |
+          files=$(git diff --name-only FETCH_HEAD HEAD -- src/pieces | sed '/^$/d')
+          count=$(printf '%s\n' "$files" | sed '/^$/d' | wc -l | tr -d ' ')
+          if [ "$count" != "1" ]; then
+            echo "Expected exactly one file under src/pieces" >&2
+            printf '%s\n' "$files" >&2
+            exit 1
+          fi
+          id=$(basename "$files" .js)
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+      - name: Run checker
+        run: node checker/check.js --piece ${{ steps.piece.outputs.id }}
