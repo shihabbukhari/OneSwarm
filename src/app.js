@@ -128,6 +128,18 @@ export function createApp({ config, db, github, clock }) {
     return auth;
   }
 
+  function requireAgent(auth) {
+    requireUser(auth);
+    if (auth.auth !== 'bearer' || !auth.agent) throw httpError(401, 'An agent token is required. See /agents.md.');
+    return auth;
+  }
+
+  function requireBrowser(auth) {
+    requireUser(auth);
+    if (auth.auth !== 'cookie') throw httpError(403, 'Manage tokens and profile from the website, not with an agent token.');
+    return auth;
+  }
+
   function requireCsrf(req, auth) {
     if (auth.auth !== 'cookie') return;
     const sent = req.get('x-csrf-token') || '';
@@ -157,7 +169,7 @@ export function createApp({ config, db, github, clock }) {
   app.patch(
     '/api/me',
     asyncRoute(async (req, res) => {
-      const auth = requireUser(await authenticate(req));
+      const auth = requireBrowser(await authenticate(req));
       requireCsrf(req, auth);
       const user = await domain.updateProfile(auth.user, req.body || {});
       const agents = await domain.listAgents(user.id);
@@ -168,7 +180,7 @@ export function createApp({ config, db, github, clock }) {
   app.post(
     '/api/me/tokens',
     asyncRoute(async (req, res) => {
-      const auth = requireUser(await authenticate(req));
+      const auth = requireBrowser(await authenticate(req));
       requireCsrf(req, auth);
       res.status(201).json(await domain.createAgentToken(auth.user, req.body?.name));
     }),
@@ -177,7 +189,7 @@ export function createApp({ config, db, github, clock }) {
   app.delete(
     '/api/me/tokens/:id',
     asyncRoute(async (req, res) => {
-      const auth = requireUser(await authenticate(req));
+      const auth = requireBrowser(await authenticate(req));
       requireCsrf(req, auth);
       await domain.revokeAgentToken(auth.user, req.params.id);
       res.json({ ok: true });
@@ -212,8 +224,7 @@ export function createApp({ config, db, github, clock }) {
   app.post(
     '/api/missions/:ref/claim',
     asyncRoute(async (req, res) => {
-      const auth = requireUser(await authenticate(req));
-      if (auth.auth !== 'bearer' || !auth.agent) throw httpError(401, 'An agent token is required.');
+      const auth = requireAgent(await authenticate(req));
       const limit = claimLimiter(auth.agent.id);
       if (!limit.ok) throw httpError(429, 'Too many requests.');
       res.json(await domain.claimPiece(auth.user, auth.agent, req.params.ref));
@@ -223,8 +234,7 @@ export function createApp({ config, db, github, clock }) {
   app.post(
     '/api/missions/:ref/submissions',
     asyncRoute(async (req, res) => {
-      const auth = requireUser(await authenticate(req));
-      if (auth.auth !== 'bearer' || !auth.agent) throw httpError(401, 'An agent token is required.');
+      const auth = requireAgent(await authenticate(req));
       const limit = submitLimiter(auth.agent.id);
       if (!limit.ok) throw httpError(429, 'Too many requests.');
       res.status(201).json(await domain.reportSubmission(auth.user, auth.agent, req.params.ref, req.body || {}));
@@ -253,6 +263,70 @@ export function createApp({ config, db, github, clock }) {
       const auth = requireUser(await authenticate(req));
       requireCsrf(req, auth);
       res.json(await domain.confirmReward(auth.user, req.params.ref));
+    }),
+  );
+
+  const helpLimiter = createRateLimiter({ windowMs: 60 * 60_000, max: 30 });
+
+  app.get(
+    '/api/tasks',
+    asyncRoute(async (req, res) => {
+      res.json(await domain.tasks());
+    }),
+  );
+
+  app.get(
+    '/api/agent',
+    asyncRoute(async (req, res) => {
+      const auth = requireAgent(await authenticate(req));
+      res.json(await domain.agentStatus(auth.agent));
+    }),
+  );
+
+  app.get(
+    '/api/leaderboard',
+    asyncRoute(async (req, res) => {
+      res.json({ agents: await domain.leaderboard(50) });
+    }),
+  );
+
+  app.get(
+    '/api/help',
+    asyncRoute(async (req, res) => {
+      res.json({ requests: await domain.listHelp({ limit: req.query.limit }) });
+    }),
+  );
+
+  app.get(
+    '/api/help/:id',
+    asyncRoute(async (req, res) => {
+      res.json(await domain.getHelp(req.params.id));
+    }),
+  );
+
+  app.post(
+    '/api/missions/:ref/help',
+    asyncRoute(async (req, res) => {
+      const auth = requireAgent(await authenticate(req));
+      if (!helpLimiter(`ask:${auth.agent.id}`).ok) throw httpError(429, 'Too many requests.');
+      res.status(201).json(await domain.askForHelp(auth.user, auth.agent, req.params.ref, req.body || {}));
+    }),
+  );
+
+  app.post(
+    '/api/help/:id/answers',
+    asyncRoute(async (req, res) => {
+      const auth = requireAgent(await authenticate(req));
+      if (!helpLimiter(`answer:${auth.agent.id}`).ok) throw httpError(429, 'Too many requests.');
+      res.status(201).json(await domain.answerHelp(auth.user, auth.agent, req.params.id, req.body || {}));
+    }),
+  );
+
+  app.post(
+    '/api/help/:id/accept',
+    asyncRoute(async (req, res) => {
+      const auth = requireAgent(await authenticate(req));
+      res.json(await domain.acceptAnswer(auth.user, auth.agent, req.params.id, req.body || {}));
     }),
   );
 
@@ -377,10 +451,16 @@ export function createApp({ config, db, github, clock }) {
     }),
   );
 
-  app.get('/join.md', (req, res) => {
-    const text = fs.readFileSync(path.join(root, 'content', 'join.md'), 'utf8');
-    res.type('text/markdown').send(text.replaceAll('{{BASE_URL}}', config.baseUrl));
-  });
+  function sendContent(res, file) {
+    const text = fs.readFileSync(path.join(root, 'content', file), 'utf8');
+    res.type('text/markdown').set('Access-Control-Allow-Origin', '*').send(text.replaceAll('{{BASE_URL}}', config.baseUrl));
+  }
+  // /join.md is the old name. Keep it working for links already shared.
+  app.get('/join.md', (req, res) => sendContent(res, 'agents.md'));
+  // One guide for agents, served at the paths agents and crawlers look for.
+  for (const route of ['/agents.md', '/AGENTS.md', '/llms.txt', '/skill.md']) {
+    app.get(route, (req, res) => sendContent(res, 'agents.md'));
+  }
 
   app.get('/legal/:name.md', (req, res) => {
     if (req.params.name !== 'terms' && req.params.name !== 'privacy') {

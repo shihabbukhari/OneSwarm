@@ -120,6 +120,40 @@ function schema(dialect) {
         event_name VARCHAR(80) NOT NULL,
         received_at VARCHAR(40) NOT NULL
       )`,
+      `CREATE TABLE IF NOT EXISTS points (
+        id VARCHAR(32) PRIMARY KEY,
+        user_id VARCHAR(32) NOT NULL,
+        agent_id VARCHAR(32) NOT NULL,
+        mission_id VARCHAR(32) NOT NULL,
+        piece_key VARCHAR(80) NOT NULL DEFAULT '',
+        kind VARCHAR(16) NOT NULL,
+        amount INTEGER NOT NULL,
+        ref_id VARCHAR(32) NOT NULL UNIQUE,
+        created_at VARCHAR(40) NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS help_requests (
+        id VARCHAR(32) PRIMARY KEY,
+        mission_id VARCHAR(32) NOT NULL,
+        piece_key VARCHAR(80) NOT NULL,
+        asker_user_id VARCHAR(32) NOT NULL,
+        asker_agent_id VARCHAR(32) NOT NULL,
+        question VARCHAR(1000) NOT NULL,
+        context ${longText} NOT NULL,
+        status VARCHAR(16) NOT NULL,
+        accepted_answer_id VARCHAR(32) NOT NULL DEFAULT '',
+        created_at VARCHAR(40) NOT NULL,
+        expires_at VARCHAR(40) NOT NULL,
+        resolved_at VARCHAR(40) NOT NULL DEFAULT ''
+      )`,
+      `CREATE TABLE IF NOT EXISTS help_answers (
+        id VARCHAR(32) PRIMARY KEY,
+        request_id VARCHAR(32) NOT NULL,
+        helper_user_id VARCHAR(32) NOT NULL,
+        helper_agent_id VARCHAR(32) NOT NULL,
+        body ${longText} NOT NULL,
+        created_at VARCHAR(40) NOT NULL,
+        UNIQUE (request_id, helper_agent_id)
+      )`,
       `CREATE TABLE IF NOT EXISTS installations (
         repo_owner VARCHAR(80) NOT NULL,
         repo_name VARCHAR(120) NOT NULL,
@@ -135,6 +169,9 @@ function schema(dialect) {
       'CREATE INDEX IF NOT EXISTS idx_pieces_mission ON pieces (mission_id, status)',
       'CREATE INDEX IF NOT EXISTS idx_submissions_pr ON submissions (mission_id, pr_number)',
       'CREATE INDEX IF NOT EXISTS idx_events_created ON events (created_at)',
+      'CREATE INDEX IF NOT EXISTS idx_points_agent ON points (agent_id)',
+      'CREATE INDEX IF NOT EXISTS idx_points_user ON points (user_id)',
+      'CREATE INDEX IF NOT EXISTS idx_help_status ON help_requests (status, expires_at)',
     ],
   };
 }

@@ -1,7 +1,8 @@
 import crypto from 'node:crypto';
-import { REWARD_NOTICE, TIP_FIELDS } from './constants.js';
+import { HELP_POINTS, PIECE_POINTS, REWARD_NOTICE, TIP_FIELDS } from './constants.js';
 import { countryByCode, COUNTRIES } from './countries.js';
 import { reviewDiff } from './merge-rules.js';
+import { createSwarm } from './swarm.js';
 import { parseRepoUrl, validateMissionYaml } from './mission-spec.js';
 import { clampText, httpError, id, isUniqueError, sha256, verifyWebhook } from './util.js';
 
@@ -70,6 +71,13 @@ export function createDomain({ db, github, config, clock }) {
       ],
     );
   }
+
+  // Defined lazily because findMission is declared further down.
+  let swarmInstance = null;
+  const swarm = () => {
+    swarmInstance ||= createSwarm({ db, nowIso, addEvent, bust, findMission });
+    return swarmInstance;
+  };
 
   async function releaseExpired() {
     const stamp = nowIso();
@@ -420,7 +428,7 @@ export function createDomain({ db, github, config, clock }) {
       pieces,
       scores,
       join_line: settled.public_number
-        ? `Read ${config.baseUrl}/join.md and join mission ${settled.public_number}.`
+        ? `Read ${config.baseUrl}/agents.md and join mission ${settled.public_number}.`
         : '',
       badge_path: settled.public_number ? `/badge/${settled.public_number}.svg` : '',
       share_path: settled.public_number ? `/share/m/${settled.public_number}.svg` : '',
@@ -951,8 +959,9 @@ export function createDomain({ db, github, config, clock }) {
           agentId: submission.agent_id,
           country: user?.country_code || '',
           kind: 'passed',
-          message: `${who} finished ${piece.piece_key} ${piece.title} ✔ checked`,
+          message: `${who} finished ${piece.piece_key} ${piece.title} ✔ checked +${PIECE_POINTS} points`,
         });
+        await swarm().awardPiece(tx, mission, piece, submission);
       });
       bust();
       return { ok: true, status: 'merged' };
@@ -1068,6 +1077,7 @@ export function createDomain({ db, github, config, clock }) {
       },
       agents: await listAgents(user.id, { publicView: true }),
       pieces_done: Number(pieces?.n || 0),
+      points: await swarm().pointsFor({ userId: user.id }),
       wins: Number(wins?.n || 0),
       kept_promises: kept.kept,
       rewards_promised: kept.promised,
@@ -1187,6 +1197,9 @@ export function createDomain({ db, github, config, clock }) {
         pieces: Number(row.pieces),
       })),
       featured_mission_number: featured ? Number(featured.number) : 0,
+      swarm: await swarm().totals(),
+      leaderboard_agents: await swarm().leaderboard(10),
+      help_open: (await swarm().listHelp({ limit: 5 })).map(({ context, ...rest }) => rest),
     };
   }
 
@@ -1267,6 +1280,48 @@ export function createDomain({ db, github, config, clock }) {
     publicProfile,
     getLive,
     adminOverview,
+    askForHelp: (...args) => swarm().askForHelp(...args),
+    listHelp: (...args) => swarm().listHelp(...args),
+    getHelp: (...args) => swarm().getHelp(...args),
+    answerHelp: (...args) => swarm().answerHelp(...args),
+    acceptAnswer: (...args) => swarm().acceptAnswer(...args),
+    leaderboard: (...args) => swarm().leaderboard(...args),
+    agentStatus: async (agent) => ({
+      agent: agent.name,
+      points: await swarm().pointsFor({ agentId: agent.id }),
+      claims: (
+        await db.all(
+          `SELECT p.piece_key, p.title, p.status, p.claim_expires_at, m.public_number
+           FROM pieces p JOIN missions m ON m.id = p.mission_id
+           WHERE p.claim_agent_id = ? AND p.status IN ('claimed', 'submitted')`,
+          [agent.id],
+        )
+      ).map((row) => ({ mission_number: Number(row.public_number), piece_key: row.piece_key, title: row.title, status: row.status, claim_expires_at: row.claim_expires_at })),
+    }),
+    tasks: async () => {
+      await releaseExpired();
+      const missions = await db.all(
+        `SELECT m.public_number, m.title, m.summary, m.repo_url, m.license,
+           (SELECT COUNT(*) FROM pieces p WHERE p.mission_id = m.id AND p.status = 'open') AS open_pieces,
+           (SELECT COUNT(*) FROM pieces p WHERE p.mission_id = m.id) AS total_pieces
+         FROM missions m WHERE m.status = 'public' AND m.kind = 'team' ORDER BY m.public_number ASC`,
+      );
+      return {
+        how: 'Claim a piece with POST /api/missions/{number}/claim, or answer an open help request. Full guide: /agents.md',
+        points: { piece: PIECE_POINTS, help: HELP_POINTS },
+        missions: missions.map((row) => ({
+          number: Number(row.public_number),
+          title: row.title,
+          summary: row.summary,
+          repo_url: row.repo_url,
+          license: row.license,
+          open_pieces: Number(row.open_pieces),
+          total_pieces: Number(row.total_pieces),
+          claim: `POST /api/missions/${Number(row.public_number)}/claim`,
+        })),
+        help_requests: (await swarm().listHelp({ limit: 20 })).map(({ context, ...rest }) => rest),
+      };
+    },
     countries: () => COUNTRIES.map(({ code, name }) => ({ code, name })),
     shareMission: async (ref) => {
       const mission = await findMission(ref);

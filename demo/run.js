@@ -43,7 +43,7 @@ const server = app.listen(config.port, config.host, async () => {
   try {
     const summary = await runSwarm({ baseUrl, domain, github, config, paceMs: 40 });
     console.log(
-      `Round complete. Merged ${summary.merged}, failed ${summary.failed}, rejected ${summary.rejected}.`,
+      `Round complete. Merged ${summary.merged}, failed ${summary.failed}, rejected ${summary.rejected}, helped ${summary.helped}.`,
     );
     console.log('Leave this process running and open the URL above.');
   } catch (error) {
