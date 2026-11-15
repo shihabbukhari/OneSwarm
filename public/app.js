@@ -484,7 +484,7 @@ function agentWire() {
 }
 
 // The graph: every dot is an agent on the network. Lines are agents that helped each other.
-// Bright pulses travel along a line when one agent answers another. Built from live data.
+// The field keeps moving on its own. Drag anywhere on it to slide the view. Scroll to zoom.
 function agentGraph() {
   const wrap = el('div', 'graph');
   const canvas = el('canvas');
@@ -558,6 +558,34 @@ function agentGraph() {
     resetView();
   });
 
+  // Drag slides the whole field. Nodes are not buttons, and the cursor stays the arrow.
+  let drag = null;
+  canvas.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+    if (!size.w) measure();
+    drag = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
+    try { canvas.setPointerCapture(event.pointerId); } catch { /* the drag still follows pointermove */ }
+  });
+  canvas.addEventListener('pointermove', (event) => {
+    if (!drag || event.pointerId !== drag.id) return;
+    const dx = event.clientX - drag.x;
+    const dy = event.clientY - drag.y;
+    if (!dx && !dy) return;
+    drag.moved = true;
+    panX += dx;
+    panY += dy;
+    drag.x = event.clientX;
+    drag.y = event.clientY;
+    clampView();
+    if (still) draw(0);
+  });
+  const endDrag = (event) => {
+    if (!drag || event.pointerId !== drag.id) return;
+    drag = null;
+  };
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+
   const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   let nodes = [];
   let edges = [];
@@ -607,10 +635,12 @@ function agentGraph() {
     });
     const index = new Map(nodes.map((n, i) => [n.name, i]));
     edges = [];
-    for (const [a, b] of pairs) if (index.has(a) && index.has(b)) edges.push({ a: index.get(a), b: index.get(b), strong: true });
+    for (const [a, b] of pairs) {
+      if (index.has(a) && index.has(b)) edges.push({ a: index.get(a), b: index.get(b), strong: true, bend: hash(`${a}${b}`) * 6.28 });
+    }
     for (let i = 0; i < nodes.length; i += 1) {
       const j = Math.floor(hash(`${nodes[i].name}e`) * nodes.length);
-      if (j !== i) edges.push({ a: i, b: j, strong: false });
+      if (j !== i) edges.push({ a: i, b: j, strong: false, bend: hash(`${nodes[i].name}b`) * 6.28 });
     }
     layoutNodes();
   }
@@ -652,6 +682,44 @@ function agentGraph() {
       }
     }
     seatLabels();
+    for (const n of nodes) {
+      n.hx = n.x;
+      n.hy = n.y;
+      n.vx = 0;
+      n.vy = 0;
+    }
+  }
+
+  // A quiet force under the picture: nodes drift, then spring back toward home,
+  // so the web flexes instead of sitting still.
+  function stepPhysics(time) {
+    if (still || nodes.length < 2) return;
+    const t = time / 1000;
+    for (const n of nodes) {
+      n.vx += Math.cos(t * 0.85 + n.phase) * 0.000028;
+      n.vy += Math.sin(t * 0.62 + n.phase * 1.4) * 0.000028;
+      n.vx += (n.hx - n.x) * 0.04;
+      n.vy += (n.hy - n.y) * 0.04;
+    }
+    for (let i = 0; i < nodes.length; i += 1) {
+      for (let j = i + 1; j < nodes.length; j += 1) {
+        const a = nodes[i];
+        const b = nodes[j];
+        const dx = a.x - b.x;
+        const dy = a.y - b.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > 0.018 || d2 < 0.000001) continue;
+        const f = 0.0000035 / d2;
+        a.vx += dx * f; a.vy += dy * f;
+        b.vx -= dx * f; b.vy -= dy * f;
+      }
+    }
+    for (const n of nodes) {
+      n.x = Math.min(0.9, Math.max(0.1, n.x + n.vx));
+      n.y = Math.min(0.86, Math.max(0.1, n.y + n.vy));
+      n.vx *= 0.78;
+      n.vy *= 0.78;
+    }
   }
 
   // Named agents sit on a ring so their names have a clear lane outward.
@@ -679,22 +747,48 @@ function agentGraph() {
     }
   }
 
-  function paintField(ctx) {
+  function paintField(ctx, time) {
+    const t = still ? 0 : time;
     ctx.save();
+    const shift = (t * 0.006) % 64;
+    const minX = -size.w * 2;
+    const maxX = size.w * 3;
+    const minY = -size.h * 2;
+    const maxY = size.h * 3;
     ctx.strokeStyle = 'rgba(107, 227, 255, 0.055)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    for (let x = 64; x < size.w; x += 64) { ctx.moveTo(x, 0); ctx.lineTo(x, size.h); }
-    for (let y = 64; y < size.h; y += 64) { ctx.moveTo(0, y); ctx.lineTo(size.w, y); }
+    for (let x = minX + shift; x < maxX; x += 64) { ctx.moveTo(x, minY); ctx.lineTo(x, maxY); }
+    for (let y = minY + shift * 0.6; y < maxY; y += 64) { ctx.moveTo(minX, y); ctx.lineTo(maxX, y); }
     ctx.stroke();
-    ctx.strokeStyle = 'rgba(107, 227, 255, 0.1)';
-    ctx.setLineDash([1.5, 8]);
     const cx = size.w * 0.5;
     const cy = size.h * 0.46;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(t / 24000);
+    ctx.translate(-cx, -cy);
+    ctx.strokeStyle = 'rgba(107, 227, 255, 0.1)';
+    ctx.setLineDash([1.5, 8]);
     for (const rad of [0.16, 0.3, 0.44]) {
       ctx.beginPath();
       ctx.ellipse(cx, cy, Math.max(36, size.w * rad), Math.max(36, size.h * rad * 0.7), 0, 0, Math.PI * 2);
       ctx.stroke();
+    }
+    ctx.restore();
+    if (!still && ctx.createConicGradient) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(t / 7000);
+      const sweep = ctx.createConicGradient(0, 0, 0);
+      sweep.addColorStop(0, 'rgba(107, 227, 255, 0)');
+      sweep.addColorStop(0.06, 'rgba(198, 255, 74, 0.09)');
+      sweep.addColorStop(0.14, 'rgba(107, 227, 255, 0)');
+      sweep.addColorStop(1, 'rgba(107, 227, 255, 0)');
+      ctx.fillStyle = sweep;
+      ctx.beginPath();
+      ctx.arc(0, 0, Math.max(size.w, size.h) * 0.62, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
     }
     ctx.restore();
   }
@@ -719,8 +813,7 @@ function agentGraph() {
 
   function paintLabels(ctx, points, nodeScale) {
     ctx.save();
-    const fontSize = Math.round(12 * Math.min(Math.max(zoom, 0.9), 1.5));
-    ctx.font = `600 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+    ctx.font = '600 12px ui-monospace, SFMono-Regular, Menlo, monospace';
     ctx.textBaseline = 'middle';
     const placed = [];
     const margin = 14;
@@ -740,10 +833,12 @@ function agentGraph() {
       const tx = -uy;
       const ty = ux;
       const gap = nodeScale + 14;
-      const spots = [0, 22, -22, 44, -44].map((shift) => {
+      const shifts = [n.shift ?? 0, 0, 22, -22, 44, -44].filter((value, index, all) => all.indexOf(value) === index);
+      const spots = shifts.map((shift) => {
         const cx = p.x + ux * (gap + boxW / 2) + tx * shift;
         const cy = p.y + uy * (gap + boxH / 2) + ty * shift;
         return {
+          shift,
           x: Math.min(size.w - margin - boxW, Math.max(margin, cx - boxW / 2)),
           y: Math.min(floor - boxH, Math.max(margin, cy - boxH / 2)),
           w: boxW,
@@ -755,6 +850,7 @@ function agentGraph() {
         return clear && !hitsNode(candidate, points);
       });
       if (!box) return;
+      n.shift = box.shift;
       placed.push(box);
       const rim = n.r + 6;
       ctx.strokeStyle = 'rgba(107, 227, 255, 0.35)';
@@ -783,32 +879,58 @@ function agentGraph() {
     const ctx = canvas.getContext('2d');
     ctx.setTransform(size.ratio, 0, 0, size.ratio, 0, 0);
     ctx.clearRect(0, 0, size.w, size.h);
-    paintField(ctx);
+    ctx.save();
+    ctx.translate(size.w / 2 + panX, size.h / 2 + panY);
+    ctx.scale(zoom, zoom);
+    ctx.translate(-size.w / 2, -size.h / 2);
+    stepPhysics(time);
+    paintField(ctx, time);
     const scale = Math.max(1, Math.min(1.35, Math.min(size.w, size.h) / 420));
-    const view = Math.max(0.8, Math.min(zoom, 2.2));
-    const drift = still ? 0 : 0.006;
+    const swayX = still ? 0 : Math.cos(time / 6400) * 8;
+    const swayY = still ? 0 : Math.sin(time / 7200) * 6;
     const P = (n) => {
-      const x = (n.x + Math.cos(time / 2600 + n.phase) * drift) * size.w;
-      const y = (n.y + Math.sin(time / 2200 + n.phase) * drift) * size.h;
+      const tremble = still ? 0 : 1;
+      const ox = (Math.cos(time / 1700 + n.phase) * 10 + Math.sin(time / 480 + n.phase * 2.1) * 3.2) * tremble;
+      const oy = (Math.sin(time / 1500 + n.phase * 1.15) * 10 + Math.cos(time / 430 + n.phase) * 3.2) * tremble;
       return {
-        x: size.w / 2 + (x - size.w / 2) * zoom + panX,
-        y: size.h / 2 + (y - size.h / 2) * zoom + panY,
+        x: n.x * size.w + ox + swayX,
+        y: n.y * size.h + oy + swayY,
       };
     };
+    const curve = (a, b, bow) => {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const len = Math.hypot(dx, dy) || 1;
+      return {
+        mx: (a.x + b.x) / 2 + (-dy / len) * bow,
+        my: (a.y + b.y) / 2 + (dx / len) * bow,
+      };
+    };
+    const strokeCurve = (a, b, bend) => {
+      const { mx, my } = curve(a, b, still ? 0 : Math.sin(time / 1300 + bend) * 14);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.quadraticCurveTo(mx, my, b.x, b.y);
+      ctx.stroke();
+      return { mx, my };
+    };
 
-    for (const e of edges) {
+    edges.forEach((e) => {
       const a = P(nodes[e.a]);
       const b = P(nodes[e.b]);
       if (e.strong) {
-        ctx.strokeStyle = 'rgba(198, 255, 74, 0.16)';
-        ctx.lineWidth = 6 * Math.min(scale, 1.3);
-        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        ctx.strokeStyle = 'rgba(198, 255, 74, 0.13)';
+        ctx.lineWidth = 7 * Math.min(scale, 1.3);
+        strokeCurve(a, b, e.bend);
       }
-      ctx.strokeStyle = e.strong ? 'rgba(198, 255, 74, 0.72)' : line;
+      const shimmer = still ? 0.72 : 0.5 + (Math.sin(time / 900 + e.bend) + 1) * 0.22;
+      ctx.strokeStyle = e.strong ? `rgba(198, 255, 74, ${shimmer})` : line;
+      ctx.globalAlpha = e.strong ? 1 : (still ? 0.7 : 0.45 + (Math.sin(time / 1100 + e.bend) + 1) * 0.18);
       ctx.lineWidth = (e.strong ? 1.35 : 1) * scale;
-      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-    }
-    if (!still && edges.length && Math.random() < 0.06) {
+      strokeCurve(a, b, e.bend);
+      ctx.globalAlpha = 1;
+    });
+    if (!still && edges.length && Math.random() < 0.09) {
       const e = edges[Math.floor(Math.random() * edges.length)];
       pulses.push({ e, born: time });
     }
@@ -818,11 +940,13 @@ function agentGraph() {
       const t = (time - p.born) / 1100;
       const a = P(nodes[p.e.a]);
       const b = P(nodes[p.e.b]);
+      const { mx, my } = curve(a, b, still ? 0 : Math.sin(time / 1300 + p.e.bend) * 14);
+      const u = 1 - t;
       ctx.fillStyle = accent;
       ctx.shadowColor = accent;
       ctx.shadowBlur = 16 * scale;
       ctx.beginPath();
-      ctx.arc(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, 3.1 * scale, 0, Math.PI * 2);
+      ctx.arc(u * u * a.x + 2 * u * t * mx + t * t * b.x, u * u * a.y + 2 * u * t * my + t * t * b.y, 3.1 * scale, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
       if (t > 0.92) lit.add(p.e.b);
@@ -831,20 +955,22 @@ function agentGraph() {
     nodes.forEach((n, i) => {
       const p = points[i];
       const hot = lit.has(i);
+      const beat = still ? 1 : 1 + Math.sin(time / 680 + n.phase) * 0.07;
       ctx.strokeStyle = hot ? accent : 'rgba(107, 227, 255, 0.4)';
       ctx.lineWidth = 1.15;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, n.r * scale * view + 5, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, n.r * scale * beat + 5, 0, Math.PI * 2);
       ctx.stroke();
       ctx.fillStyle = hot ? accent : agent;
       ctx.shadowColor = hot ? accent : agent;
-      ctx.shadowBlur = (hot ? 16 : n.label ? 10 : 0) * scale;
+      ctx.shadowBlur = (hot ? 18 : n.label ? 12 : 7) * scale;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, n.r * scale * view, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, n.r * scale * beat, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
     });
-    if (size.w > 280) paintLabels(ctx, points, scale * view);
+    if (size.w > 280) paintLabels(ctx, points, scale);
+    ctx.restore();
     if (!still) frame = requestAnimationFrame(draw);
   }
 
