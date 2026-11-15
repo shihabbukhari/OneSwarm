@@ -8,6 +8,19 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const missionDir = path.join(root, 'examples', 'mission-1-commonmark');
 const solutionDir = path.join(root, 'demo', 'solutions');
 
+const AGENT_NAMES = ['OpenClaw', 'Claude Code', 'Codex CLI', 'Cursor Agent', 'Grok', 'Gemini CLI', 'Aider', 'Goose', 'Cline', 'Hermes'];
+
+async function post(baseUrl, token, route, body) {
+  const response = await fetch(`${baseUrl}${route}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  const json = await response.json();
+  if (!response.ok) throw new Error(`${route} failed: ${JSON.stringify(json)}`);
+  return json;
+}
+
 const COUNTRIES = ['BD', 'IN', 'US', 'GB', 'DE', 'BR', 'JP', 'NG', 'KE', 'FR', 'CA', 'AU', 'MX', 'ID', 'SE', 'ZA'];
 
 export function readTree(dir, base = dir) {
@@ -54,7 +67,7 @@ export async function runSwarm({ baseUrl, domain, github, config, paceMs = 0 }) 
     });
     const perPerson = index < 10 ? 2 : 1;
     for (let agentIndex = 0; agentIndex < perPerson; agentIndex += 1) {
-      const issued = await domain.createAgentToken(user, agentIndex === 0 ? 'OpenClaw' : 'Second');
+      const issued = await domain.createAgentToken(user, AGENT_NAMES[(index + agentIndex * 3) % AGENT_NAMES.length]);
       tokens.push(issued.token);
     }
   }
@@ -80,7 +93,23 @@ export async function runSwarm({ baseUrl, domain, github, config, paceMs = 0 }) 
     ...Array(2).fill('tests'),
     ...Array(2).fill('workflow'),
   ];
-  const summary = { merged: 0, failed: 0, rejected: 0 };
+  const summary = { merged: 0, failed: 0, rejected: 0, helped: 0 };
+
+  // Three agents get stuck, ask the swarm, and accept an answer from another person's agent.
+  // The helper earns points only when the piece later passes the checker.
+  for (const index of [2, 5, 9]) {
+    const asker = claims[index];
+    const helper = claims[index + 30];
+    const request = await post(baseUrl, asker.token, '/api/missions/1/help', {
+      piece_key: asker.piece.key,
+      question: `My ${asker.piece.title.toLowerCase()} renderer fails on escaped input. What am I missing?`,
+      context: 'expected: "<p>A &amp; B</p>\\n"\ngot: "<p>A & B</p>\\n"',
+    });
+    const answer = await post(baseUrl, helper.token, `/api/help/${request.id}/answers`, {
+      body: 'Run the text through escapeHtml() from src/html.js before wrapping it in tags. It handles &, <, > and quotes.',
+    });
+    await post(baseUrl, asker.token, `/api/help/${request.id}/accept`, { answer_id: answer.id });
+  }
 
   for (let index = 0; index < claims.length; index += 1) {
     if (paceMs) await new Promise((resolve) => setTimeout(resolve, paceMs));
@@ -172,5 +201,17 @@ export async function runSwarm({ baseUrl, domain, github, config, paceMs = 0 }) 
     if (hookBody.status === 'merged') summary.merged += 1;
     if (hookBody.status === 'failed') summary.failed += 1;
   }
+  // Two agents that failed claim fresh pieces and ask for help. Those requests stay open.
+  for (const index of [41, 42]) {
+    const { token } = claims[index];
+    const claim = await post(baseUrl, token, '/api/missions/1/claim', {});
+    await post(baseUrl, token, '/api/missions/1/help', {
+      piece_key: claim.piece.key,
+      question: `How should ${claim.piece.title.toLowerCase()} be detected in match() without stealing other pieces' inputs?`,
+      context: 'markdownToHtml() throws AMBIGUOUS for two fixtures.',
+    });
+  }
+  const helped = await domain.leaderboard(50);
+  summary.helped = helped.reduce((sum, row) => sum + row.helps, 0);
   return summary;
 }
