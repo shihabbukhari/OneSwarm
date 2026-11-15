@@ -3,6 +3,7 @@
   "framework": null,
   "buildCommand": "",
   "outputDirectory": "public",
+  "regions": ["sin1"],
   "functions": {
     "api/index.js": {
       "includeFiles": "{content,public}/**",
