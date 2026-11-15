@@ -112,3 +112,64 @@ test('an agent token cannot create more agent tokens', async () => {
     await harness.close();
   }
 });
+
+test('agents can ask the swarm anything, and solved answers land in the shared library', async () => {
+  const { harness, call, agent } = await setup();
+  try {
+    const asker = await agent('asker2', 'OpenClaw');
+    const helper = await agent('helper2', 'Claude Code');
+    const profile = await call(helper, 'PATCH', '/api/agent', { about: 'Good at Postgres, regex, and flaky tests.' });
+    assert.equal(profile.status, 200);
+    const ask = await call(asker, 'POST', '/api/help', { question: 'Why does my Postgres migration hang on a large table?', context: 'ALTER TABLE ... ADD COLUMN ... DEFAULT now()' });
+    assert.equal(ask.status, 201);
+    const open = (await call(null, 'GET', '/api/help')).body.requests;
+    assert.equal(open[0].kind, 'question');
+    assert.equal(open[0].reward_points, 2);
+    const answer = await call(helper, 'POST', `/api/help/${ask.body.id}/answers`, { body: 'Add the column without a default, backfill in batches, then set the default.' });
+    const accepted = await call(asker, 'POST', `/api/help/${ask.body.id}/accept`, { answer_id: answer.body.id });
+    assert.equal(accepted.body.status, 'resolved');
+    assert.equal(accepted.body.helper_points, 2);
+    assert.equal((await call(helper, 'GET', '/api/agent')).body.points, 2);
+
+    const found = (await call(null, 'GET', '/api/library?q=postgres')).body.results;
+    assert.equal(found.length, 1);
+    assert.match(found[0].answer, /backfill in batches/);
+    assert.equal((await call(null, 'GET', '/api/library?q=kubernetes')).body.results.length, 0);
+    assert.equal((await call(null, 'GET', '/api/library?q=100%25')).body.results.length, 0);
+
+    const directory = (await call(null, 'GET', '/api/agents?q=regex')).body.agents;
+    assert.deepEqual(directory.map((row) => [row.agent, row.points, row.answers]), [['Claude Code', 2, 1]]);
+  } finally {
+    await harness.close();
+  }
+});
+
+test('two people cannot farm points by trading accepts', async () => {
+  const { harness, call, agent } = await setup();
+  try {
+    const asker = await agent('farmer-a', 'One');
+    const helper = await agent('farmer-b', 'Two');
+    const paid = [];
+    for (let round = 0; round < 3; round += 1) {
+      const ask = await call(asker, 'POST', '/api/help', { question: `Round ${round}: is this a real question?` });
+      const answer = await call(helper, 'POST', `/api/help/${ask.body.id}/answers`, { body: 'Yes, it is a very real answer.' });
+      paid.push((await call(asker, 'POST', `/api/help/${ask.body.id}/accept`, { answer_id: answer.body.id })).body.helper_points);
+    }
+    assert.deepEqual(paid, [2, 0, 0]);
+    assert.equal((await call(helper, 'GET', '/api/agent')).body.points, 2);
+  } finally {
+    await harness.close();
+  }
+});
+
+test('an agent can hold at most three open questions', async () => {
+  const { harness, call, agent } = await setup();
+  try {
+    const token = await agent('chatty', 'Gemini CLI');
+    const statuses = [];
+    for (let i = 0; i < 4; i += 1) statuses.push((await call(token, 'POST', '/api/help', { question: `Question number ${i} for the swarm` })).status);
+    assert.deepEqual(statuses, [201, 201, 201, 409]);
+  } finally {
+    await harness.close();
+  }
+});

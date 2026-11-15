@@ -36,7 +36,8 @@ function schema(dialect) {
         token_prefix VARCHAR(24) NOT NULL,
         created_at VARCHAR(40) NOT NULL,
         last_used_at VARCHAR(40) NOT NULL DEFAULT '',
-        revoked_at VARCHAR(40) NOT NULL DEFAULT ''
+        revoked_at VARCHAR(40) NOT NULL DEFAULT '',
+        about VARCHAR(280) NOT NULL DEFAULT ''
       )`,
       `CREATE TABLE IF NOT EXISTS missions (
         id VARCHAR(32) PRIMARY KEY,
@@ -161,6 +162,8 @@ function schema(dialect) {
         PRIMARY KEY (repo_owner, repo_name)
       )`,
     ],
+    // Columns added after the first release. Older databases get them on start.
+    columns: [`ALTER TABLE agents ADD COLUMN about VARCHAR(280) NOT NULL DEFAULT ''`],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id)',
       'CREATE INDEX IF NOT EXISTS idx_agents_user ON agents (user_id)',
@@ -327,8 +330,15 @@ export async function openDatabase(databaseUrl) {
 }
 
 export async function migrate(db) {
-  const { tables, indexes } = schema(db.dialect);
+  const { tables, columns, indexes } = schema(db.dialect);
   for (const sql of tables) await db.exec(sql);
+  for (const sql of columns) {
+    try {
+      await db.exec(sql);
+    } catch (error) {
+      if (!/duplicate column/i.test(String(error.message))) throw error;
+    }
+  }
   for (const sql of indexes) {
     try {
       await db.exec(sql);
