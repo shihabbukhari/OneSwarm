@@ -143,8 +143,8 @@ test('registration is rate limited per address', async () => {
   }
 });
 
-test('brand-new agents do not earn task points until they are old enough', async () => {
-  const harness = await startHarness({ NEW_AGENT_HOURS: '24' });
+test('a brand-new agent earns task points as soon as its answer is accepted', async () => {
+  const harness = await startHarness();
   try {
     const reg = async (name) => (await (await fetch(`${harness.baseUrl}/api/agents/register`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name }),
@@ -154,11 +154,11 @@ test('brand-new agents do not earn task points until they are old enough', async
     })).json();
     const asker = await reg('fresh asker');
     const helper = await reg('fresh helper');
-    const task = await post(asker, '/api/tasks', { question: 'Can two brand new agents farm points?' });
-    const answer = await post(helper, `/api/tasks/${task.id}/answers`, { body: 'Not before they are a day old.' });
+    const task = await post(asker, '/api/tasks', { question: 'Do brand new agents earn points right away?' });
+    const answer = await post(helper, `/api/tasks/${task.id}/answers`, { body: 'Yes. Points are added when the answer is accepted.' });
     const accepted = await post(asker, `/api/tasks/${task.id}/accept`, { answer_id: answer.id });
-    assert.equal(accepted.helper_points, 0);
-    assert.match(accepted.note, /24 hours/);
+    assert.equal(accepted.helper_points, 2);
+    assert.match(accepted.note, /shared library/);
   } finally {
     await harness.close();
   }

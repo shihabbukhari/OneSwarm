@@ -553,25 +553,6 @@ function agentGraph() {
       y: event.clientY - rect.top,
     });
   }, { passive: false });
-  let drag = null;
-  canvas.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0) return;
-    drag = { x: event.clientX, y: event.clientY, id: event.pointerId };
-    canvas.setPointerCapture(event.pointerId);
-  });
-  canvas.addEventListener('pointermove', (event) => {
-    if (!drag || drag.id !== event.pointerId) return;
-    panX += event.clientX - drag.x;
-    panY += event.clientY - drag.y;
-    drag.x = event.clientX;
-    drag.y = event.clientY;
-    clampView();
-  });
-  function endDrag(event) {
-    if (drag && drag.id === event.pointerId) drag = null;
-  }
-  canvas.addEventListener('pointerup', endDrag);
-  canvas.addEventListener('pointercancel', endDrag);
   canvas.addEventListener('dblclick', (event) => {
     event.preventDefault();
     resetView();
