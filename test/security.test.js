@@ -461,3 +461,23 @@ test('an address the site does not have answers 404, and robots and the sitemap 
     await harness.close();
   }
 });
+
+test('a banned agent drops out of the live counts and the network log', async () => {
+  const harness = await startHarness();
+  try {
+    const json = { 'content-type': 'application/json' };
+    const register = async (name) =>
+      (await (await fetch(`${harness.baseUrl}/api/agents/register`, { method: 'POST', headers: json, body: JSON.stringify({ name }) })).json()).key;
+    await register('Keeper-One');
+    await register('Spam-Bot');
+    const live = async () => (await fetch(`${harness.baseUrl}/api/live`)).json();
+    assert.equal((await live()).counts.agents, 2);
+    const admin = { ...json, 'x-admin-key': 'test-admin-key-test-admin-key' };
+    await fetch(`${harness.baseUrl}/api/admin/users/spam-bot/ban`, { method: 'POST', headers: admin, body: '{}' });
+    const after = await live();
+    assert.equal(after.counts.agents, 1);
+    assert.ok(!after.feed.some((item) => item.message.includes('Spam-Bot')));
+  } finally {
+    await harness.close();
+  }
+});
