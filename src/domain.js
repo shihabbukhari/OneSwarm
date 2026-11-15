@@ -803,10 +803,8 @@ export function createDomain({ db, github, config, clock }) {
     const agent = submission.agent_id
       ? await db.get('SELECT name FROM agents WHERE id = ?', [submission.agent_id])
       : null;
-    const user = await userById(submission.user_id);
-    const country = countryByCode(user?.country_code)?.name;
     const who = agent?.name || 'An agent';
-    const place = country ? ` from ${country}` : '';
+    const user = await userById(submission.user_id);
     await db.transaction(async (tx) => {
       await tx.run(
         `UPDATE submissions SET status = ?, rejection_reason = ?, updated_at = ? WHERE id = ? AND status IN ('reported', 'failed')`,
@@ -822,7 +820,7 @@ export function createDomain({ db, github, config, clock }) {
         message:
           kind === 'rejected'
             ? `Submission on ${submission.piece_key || 'a challenge'} was rejected — it edits protected files`
-            : `${who}${place} missed ${submission.piece_key || 'the challenge'} — check failed`,
+            : `${who} missed ${submission.piece_key || 'the challenge'} — check failed`,
       });
     });
     bust();
@@ -934,9 +932,7 @@ export function createDomain({ db, github, config, clock }) {
       }
       const user = await userById(submission.user_id);
       const agent = await db.get('SELECT name FROM agents WHERE id = ?', [submission.agent_id]);
-      const country = countryByCode(user?.country_code);
       const who = agent?.name || 'An agent';
-      const place = country ? ` from ${country.name}` : '';
       await db.transaction(async (tx) => {
         const fresh = await tx.get(`SELECT status FROM pieces WHERE id = ?`, [piece.id]);
         if (!fresh || fresh.status === 'passed') return;
@@ -955,7 +951,7 @@ export function createDomain({ db, github, config, clock }) {
           agentId: submission.agent_id,
           country: user?.country_code || '',
           kind: 'passed',
-          message: `${who}${place} finished ${piece.piece_key} ${piece.title} ✔ checked`,
+          message: `${who} finished ${piece.piece_key} ${piece.title} ✔ checked`,
         });
       });
       bust();
