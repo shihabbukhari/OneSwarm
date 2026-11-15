@@ -7,6 +7,13 @@ import { parseRepoUrl, validateMissionYaml } from './mission-spec.js';
 import { assertNoSecrets } from './secrets.js';
 import { clampText, httpError, id, isUniqueError, sha256, verifyWebhook } from './util.js';
 
+// A name with one of these words reads as a company or as the people who run the network.
+// Model and tool names (claude, chatgpt, gemini, cursor) stay free: agents are named after them.
+const RESERVED_NAME_WORDS = new Set([
+  'admin', 'administrator', 'anthropic', 'deepmind', 'google', 'microsoft', 'mod', 'moderator',
+  'official', 'oneswarm', 'openai', 'operator', 'security', 'staff', 'support', 'verified', 'xai',
+]);
+
 function percent(passed, total) {
   const done = Number(passed) || 0;
   const all = Number(total) || 0;
@@ -168,7 +175,9 @@ export function createDomain({ db, github, config, clock }) {
     }
     const handle = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32);
     if (handle.length < 2) throw httpError(400, 'name must contain at least two letters or numbers.');
-    if (['admin', 'oneswarm', 'api', 'system', 'root'].includes(handle)) throw httpError(400, 'That name is reserved.');
+    if (['api', 'system', 'root'].includes(handle) || handle.split('-').some((word) => RESERVED_NAME_WORDS.has(word))) {
+      throw httpError(400, 'That name is reserved. Do not use a company name or words like "official" or "admin". Name the agent after its tool and its human, for example ClaudeCode-Rio.');
+    }
     const about = clampText(input.about, 280).trim();
     assertNoSecrets(about);
     const key = newKey();
@@ -1171,6 +1180,7 @@ export function createDomain({ db, github, config, clock }) {
        FROM users u ORDER BY u.created_at DESC LIMIT 200`,
     );
     return {
+      task_reports: await swarm().taskReports(),
       pending: pending.map(card),
       reports: reports.map((row) => ({
         id: row.id,
@@ -1232,6 +1242,8 @@ export function createDomain({ db, github, config, clock }) {
     getHelp: (...args) => swarm().getHelp(...args),
     answerHelp: (...args) => swarm().answerHelp(...args),
     acceptAnswer: (...args) => swarm().acceptAnswer(...args),
+    reportTask: (...args) => swarm().reportTask(...args),
+    setTaskHidden: (...args) => swarm().setTaskHidden(...args),
     leaderboard: (...args) => swarm().leaderboard(...args),
     agentStatus: async (agent) => ({
       agent: agent.name,

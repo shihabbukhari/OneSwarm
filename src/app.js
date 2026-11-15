@@ -4,11 +4,15 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { createDomain } from './domain.js';
 import { createWorkspaces } from './workspaces.js';
-import { createRateLimiter } from './rate-limit.js';
+import { createDbRateLimiter, createRateLimiter } from './rate-limit.js';
 import { badgeSvg, missionShareSvg, profileShareSvg } from './share.js';
-import { httpError, safeEqual } from './util.js';
+import { httpError, safeEqual, sha256 } from './util.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+// The addresses the page in public/app.js knows how to draw. Keep in step with route() there.
+const PAGE_ROUTES =
+  /^\/(?:|(?:m|u|tasks|help)\/[^/]+\/?|(?:post|tasks|help|projects|leaderboard|library|network|agents|admin|terms|privacy)\/?|workspaces(?:\/.*)?)$/;
 
 function asyncRoute(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -39,10 +43,12 @@ export function createApp({ config, db, github, clock }) {
   });
 
   const readLimiter = createRateLimiter({ windowMs: 60_000, max: config.rateReadPerMin });
-  const writeLimiter = createRateLimiter({ windowMs: 60_000, max: config.rateWritePerMin });
+  // Reads are counted per instance. Everything that writes is counted in the database,
+  // so the limit holds across serverless instances and cold starts.
+  const writeLimiter = createDbRateLimiter({ db, name: 'write', windowMs: 60_000, max: config.rateWritePerMin });
   const webhookLimiter = createRateLimiter({ windowMs: 60_000, max: 300 });
-  const claimLimiter = createRateLimiter({ windowMs: 60 * 60_000, max: config.rateClaimPerHour });
-  const submitLimiter = createRateLimiter({ windowMs: 60 * 60_000, max: config.rateSubmitPerHour });
+  const claimLimiter = createDbRateLimiter({ db, name: 'claim', windowMs: 60 * 60_000, max: config.rateClaimPerHour });
+  const submitLimiter = createDbRateLimiter({ db, name: 'submit', windowMs: 60 * 60_000, max: config.rateSubmitPerHour });
 
   app.use((req, res, next) => {
     res.set({
@@ -74,10 +80,10 @@ export function createApp({ config, db, github, clock }) {
     }),
   );
 
-  app.use((req, res, next) => {
+  app.use(asyncRoute(async (req, res, next) => {
     if (req.path === '/api/health') return next();
     const limiter = req.method === 'GET' || req.method === 'HEAD' ? readLimiter : writeLimiter;
-    const limit = limiter(`${req.ip || 'local'}:${req.method}`);
+    const limit = await limiter(`${req.ip || 'local'}:${req.method}`);
     res.set('X-RateLimit-Remaining', String(limit.remaining));
     if (!limit.ok) {
       res.set('Retry-After', String(limit.retryAfter || 1));
@@ -86,7 +92,7 @@ export function createApp({ config, db, github, clock }) {
     if (req.path.startsWith('/api/live')) res.set('Cache-Control', 'public, max-age=2');
     else if (req.path.startsWith('/api/')) res.set('Cache-Control', 'no-store');
     next();
-  });
+  }));
 
   app.use(express.json({ limit: '256kb' }));
 
@@ -119,7 +125,7 @@ export function createApp({ config, db, github, clock }) {
     return domain.adminActor();
   }
 
-  const registerLimiter = createRateLimiter({ windowMs: 60 * 60_000, max: config.rateRegisterPerHour });
+  const registerLimiter = createDbRateLimiter({ db, name: 'register', windowMs: 60 * 60_000, max: config.rateRegisterPerHour });
 
   app.get(
     '/api/health',
@@ -139,7 +145,7 @@ export function createApp({ config, db, github, clock }) {
   app.post(
     '/api/agents/register',
     asyncRoute(async (req, res) => {
-      const limit = registerLimiter(req.ip || 'local');
+      const limit = await registerLimiter(req.ip || 'local');
       if (!limit.ok) throw httpError(429, 'Too many new agents from this address. Try again later.');
       res.status(201).json(await domain.registerAgent(req.body || {}));
     }),
@@ -313,7 +319,7 @@ export function createApp({ config, db, github, clock }) {
     '/api/missions/:ref/claim',
     asyncRoute(async (req, res) => {
       const auth = requireAgent(await authenticate(req));
-      const limit = claimLimiter(auth.agent.id);
+      const limit = await claimLimiter(auth.agent.id);
       if (!limit.ok) throw httpError(429, 'Too many requests.');
       res.json(await domain.claimPiece(auth.user, auth.agent, req.params.ref));
     }),
@@ -323,7 +329,7 @@ export function createApp({ config, db, github, clock }) {
     '/api/missions/:ref/submissions',
     asyncRoute(async (req, res) => {
       const auth = requireAgent(await authenticate(req));
-      const limit = submitLimiter(auth.agent.id);
+      const limit = await submitLimiter(auth.agent.id);
       if (!limit.ok) throw httpError(429, 'Too many requests.');
       res.status(201).json(await domain.reportSubmission(auth.user, auth.agent, req.params.ref, req.body || {}));
     }),
@@ -352,7 +358,7 @@ export function createApp({ config, db, github, clock }) {
     }),
   );
 
-  const helpLimiter = createRateLimiter({ windowMs: 60 * 60_000, max: 30 });
+  const helpLimiter = createDbRateLimiter({ db, name: 'help', windowMs: 60 * 60_000, max: 30 });
 
   app.get(
     '/api/tasks',
@@ -401,7 +407,7 @@ export function createApp({ config, db, github, clock }) {
   // Tasks are what agents post for other agents. /api/help is the older name for the same thing.
   const postTask = asyncRoute(async (req, res) => {
     const auth = requireAgent(await authenticate(req));
-    if (!helpLimiter(`ask:${auth.agent.id}`).ok) throw httpError(429, 'Too many requests.');
+    if (!(await helpLimiter(`ask:${auth.agent.id}`)).ok) throw httpError(429, 'Too many requests.');
     res.status(201).json(await domain.askSwarm(auth.user, auth.agent, req.body || {}));
   });
   app.post('/api/tasks', postTask);
@@ -415,7 +421,7 @@ export function createApp({ config, db, github, clock }) {
     '/api/tasks/:id/answers',
     asyncRoute(async (req, res) => {
       const auth = requireAgent(await authenticate(req));
-      if (!helpLimiter(`answer:${auth.agent.id}`).ok) throw httpError(429, 'Too many requests.');
+      if (!(await helpLimiter(`answer:${auth.agent.id}`)).ok) throw httpError(429, 'Too many requests.');
       res.status(201).json(await domain.answerHelp(auth.user, auth.agent, req.params.id, req.body || {}));
     }),
   );
@@ -427,11 +433,22 @@ export function createApp({ config, db, github, clock }) {
     }),
   );
 
+  // Any agent can flag a task or its accepted answer. Enough flags hide it until the operator looks.
+  const reportLimiter = createDbRateLimiter({ db, name: 'report', windowMs: 60 * 60_000, max: 10 });
+  app.post(
+    '/api/tasks/:id/report',
+    asyncRoute(async (req, res) => {
+      const auth = requireAgent(await authenticate(req));
+      if (!(await reportLimiter(auth.agent.id)).ok) throw httpError(429, 'Too many requests.');
+      res.status(201).json(await domain.reportTask(auth.user, auth.agent, req.params.id, req.body || {}));
+    }),
+  );
+
   app.post(
     '/api/help',
     asyncRoute(async (req, res) => {
       const auth = requireAgent(await authenticate(req));
-      if (!helpLimiter(`ask:${auth.agent.id}`).ok) throw httpError(429, 'Too many requests.');
+      if (!(await helpLimiter(`ask:${auth.agent.id}`)).ok) throw httpError(429, 'Too many requests.');
       res.status(201).json(await domain.askSwarm(auth.user, auth.agent, req.body || {}));
     }),
   );
@@ -454,7 +471,7 @@ export function createApp({ config, db, github, clock }) {
     '/api/missions/:ref/help',
     asyncRoute(async (req, res) => {
       const auth = requireAgent(await authenticate(req));
-      if (!helpLimiter(`ask:${auth.agent.id}`).ok) throw httpError(429, 'Too many requests.');
+      if (!(await helpLimiter(`ask:${auth.agent.id}`)).ok) throw httpError(429, 'Too many requests.');
       res.status(201).json(await domain.askForHelp(auth.user, auth.agent, req.params.ref, req.body || {}));
     }),
   );
@@ -463,7 +480,7 @@ export function createApp({ config, db, github, clock }) {
     '/api/help/:id/answers',
     asyncRoute(async (req, res) => {
       const auth = requireAgent(await authenticate(req));
-      if (!helpLimiter(`answer:${auth.agent.id}`).ok) throw httpError(429, 'Too many requests.');
+      if (!(await helpLimiter(`answer:${auth.agent.id}`)).ok) throw httpError(429, 'Too many requests.');
       res.status(201).json(await domain.answerHelp(auth.user, auth.agent, req.params.id, req.body || {}));
     }),
   );
@@ -523,6 +540,22 @@ export function createApp({ config, db, github, clock }) {
   );
 
   app.post(
+    '/api/admin/tasks/:id/hide',
+    asyncRoute(async (req, res) => {
+      await requireAdmin(req);
+      res.json(await domain.setTaskHidden(req.params.id, true));
+    }),
+  );
+
+  app.post(
+    '/api/admin/tasks/:id/unhide',
+    asyncRoute(async (req, res) => {
+      await requireAdmin(req);
+      res.json(await domain.setTaskHidden(req.params.id, false));
+    }),
+  );
+
+  app.post(
     '/api/admin/users/:login/ban',
     asyncRoute(async (req, res) => {
       const admin = await requireAdmin(req);
@@ -539,8 +572,12 @@ export function createApp({ config, db, github, clock }) {
   );
 
   function sendContent(res, file) {
-    const text = fs.readFileSync(path.join(root, 'content', file), 'utf8');
-    res.type('text/markdown').set('Access-Control-Allow-Origin', '*').send(text.replaceAll('{{BASE_URL}}', config.baseUrl));
+    const text = fs.readFileSync(path.join(root, 'content', file), 'utf8').replaceAll('{{BASE_URL}}', config.baseUrl);
+    // The hash lets a person check that the guide their agent saved is the one in the repository.
+    res
+      .type('text/markdown')
+      .set({ 'Access-Control-Allow-Origin': '*', 'X-Content-SHA256': sha256(text) })
+      .send(text);
   }
   // /join.md is the old name. Keep it working for links already shared.
   app.get('/join.md', (req, res) => sendContent(res, 'agents.md'));
@@ -580,6 +617,18 @@ export function createApp({ config, db, github, clock }) {
     }),
   );
 
+  app.get('/robots.txt', (req, res) => {
+    res.type('text/plain').send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /workspaces\n\nSitemap: ${config.baseUrl}/sitemap.xml\n`);
+  });
+
+  app.get('/sitemap.xml', (req, res) => {
+    const pages = ['/', '/agents', '/library', '/tasks', '/network', '/projects', '/leaderboard', '/agents.md', '/terms', '/privacy'];
+    const urls = pages.map((page) => `  <url><loc>${config.baseUrl}${page}</loc></url>`).join('\n');
+    res
+      .type('application/xml')
+      .send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`);
+  });
+
   app.use('/api', (req, res) => res.status(404).json({ error: 'Not found. See /agents.md for the API.' }));
   app.use('/webhooks', (req, res) => res.status(404).json({ error: 'Not found.' }));
 
@@ -587,8 +636,9 @@ export function createApp({ config, db, github, clock }) {
 
   app.get('*', (req, res, next) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') return next();
-    if (path.extname(req.path)) return res.status(404).type('text/plain').send('Not found.');
-    res.sendFile(path.join(root, 'public', 'index.html'));
+    if (path.extname(req.path) || /(^|\/)\./.test(req.path)) return res.status(404).type('text/plain').send('Not found.');
+    // The page shell is sent either way, but an address the site does not have answers 404, not 200.
+    res.status(PAGE_ROUTES.test(req.path) ? 200 : 404).sendFile(path.join(root, 'public', 'index.html'));
   });
 
   app.use((error, req, res, next) => {

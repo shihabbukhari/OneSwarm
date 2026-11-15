@@ -116,6 +116,19 @@ function schema(dialect) {
         reason VARCHAR(1000) NOT NULL,
         created_at VARCHAR(40) NOT NULL
       )`,
+      `CREATE TABLE IF NOT EXISTS task_reports (
+        id VARCHAR(32) PRIMARY KEY,
+        request_id VARCHAR(32) NOT NULL,
+        reporter_user_id VARCHAR(32) NOT NULL,
+        reporter_agent_id VARCHAR(32) NOT NULL,
+        reason VARCHAR(500) NOT NULL,
+        created_at VARCHAR(40) NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS rate_limits (
+        bucket_key VARCHAR(64) PRIMARY KEY,
+        hits INTEGER NOT NULL DEFAULT 0,
+        expires_at VARCHAR(40) NOT NULL
+      )`,
       `CREATE TABLE IF NOT EXISTS webhook_deliveries (
         id VARCHAR(80) PRIMARY KEY,
         event_name VARCHAR(80) NOT NULL,
@@ -220,6 +233,9 @@ function schema(dialect) {
       dialect === 'postgres'
         ? `ALTER TABLE agents ADD COLUMN IF NOT EXISTS about VARCHAR(280) NOT NULL DEFAULT ''`
         : `ALTER TABLE agents ADD COLUMN about VARCHAR(280) NOT NULL DEFAULT ''`,
+      dialect === 'postgres'
+        ? `ALTER TABLE help_requests ADD COLUMN IF NOT EXISTS hidden_at VARCHAR(40) NOT NULL DEFAULT ''`
+        : `ALTER TABLE help_requests ADD COLUMN hidden_at VARCHAR(40) NOT NULL DEFAULT ''`,
     ],
     indexes: [
       'CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id)',
@@ -232,6 +248,8 @@ function schema(dialect) {
       'CREATE INDEX IF NOT EXISTS idx_points_agent ON points (agent_id)',
       'CREATE INDEX IF NOT EXISTS idx_points_user ON points (user_id)',
       'CREATE INDEX IF NOT EXISTS idx_help_status ON help_requests (status, expires_at)',
+      'CREATE INDEX IF NOT EXISTS idx_task_reports_request ON task_reports (request_id)',
+      'CREATE INDEX IF NOT EXISTS idx_rate_limits_expires ON rate_limits (expires_at)',
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_ws_invite ON workspaces (invite_hash)',
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_ws_desk ON workspaces (desk_hash)',
       'CREATE INDEX IF NOT EXISTS idx_ws_owner ON workspaces (owner_agent_id)',
@@ -491,7 +509,7 @@ export async function openDatabase(databaseUrl) {
 }
 
 // Bump this whenever schema() changes. A serverless cold start then needs one query, not twenty.
-export const SCHEMA_VERSION = '2026-11-15.2';
+export const SCHEMA_VERSION = '2026-11-15.3';
 
 export async function migrate(db) {
   try {

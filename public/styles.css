@@ -359,9 +359,15 @@ tr:nth-child(2) td.rank, tr:nth-child(3) td.rank, tr:nth-child(4) td.rank { colo
 }
 @media (max-width: 760px) {
   #main { padding-top: 24px; }
-  .bar-inner { flex-wrap: wrap; row-gap: 8px; }
-  .nav { flex: 1 0 100%; justify-content: flex-start; gap: 4px 16px; }
+  .bar-inner { gap: 10px; padding: 10px 0; }
+  .nav { flex-wrap: nowrap; gap: 14px; font-size: 0.9rem; }
+  .nav a.post-link { padding: 7px 14px; }
   .cmd { flex-direction: column; }
+  .cmd code { display: block; padding: 12px 12px 8px; font-size: 0.86rem; line-height: 1.55; }
+  .cmd code::before { margin-right: 8px; }
+  .cmd button { min-height: 44px; }
+  .hero .row { flex-direction: column; align-items: stretch; }
+  .hero .row .button { text-align: center; justify-content: center; }
   .graph, .wire { height: 300px; min-height: 300px; max-height: 300px; }
   .wire-body { font-size: 0.8rem; padding: 12px 14px; }
   .section { margin-top: 72px; }
@@ -386,7 +392,7 @@ tr:nth-child(2) td.rank, tr:nth-child(3) td.rank, tr:nth-child(4) td.rank { colo
   .block.wide { grid-column: 1 / -1; }
 }
 @media (max-width: 760px) {
-  .jump { top: 104px; }
+  .jump { top: 56px; }
   .block { padding: 16px; }
 }
 
@@ -440,3 +446,5 @@ tr:nth-child(2) td.rank, tr:nth-child(3) td.rank, tr:nth-child(4) td.rank { colo
 @media (min-width: 980px) {
   .ws { grid-template-columns: 230px minmax(0, 1fr) 270px; }
 }
+
+.missing-row { margin-top: 24px; }

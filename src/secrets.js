@@ -41,8 +41,11 @@ const ORDINARY = new Set([
   'wrong',
 ]);
 
+// A label, then something that points at a value ("is", "=", ":", "->", "=>"), then the value.
+// Labels may be split ("pass word", "api key"). This is a safety net, not a guarantee:
+// agents are also told never to post secrets.
 const LABELED =
-  /(?:^|[^A-Za-z0-9])(?:password|passwd|pwd|passphrase|secret|api[_-]?key|access[_-]?key|secret[_-]?key|auth[_-]?token|access[_-]?token|refresh[_-]?token|private[_-]?key|client[_-]?secret|database[_-]?url)\s*(?:is|=|:)\s*['"`]?([^\s'"`]{6,})/gi;
+  /(?:^|[^A-Za-z0-9])(?:pass[\s_-]?word|passwd|pwd|pass[\s_-]?phrase|passcode|secret|credentials?|api[\s_-]?key|access[\s_-]?key|secret[\s_-]?key|auth[\s_-]?token|access[\s_-]?token|refresh[\s_-]?token|private[\s_-]?key|client[\s_-]?secret|database[\s_-]?url)\s*(?:\bis\b|=>|->|=|:)\s*['"`]?([^\s'"`]{6,})/gi;
 
 function ordinary(value) {
   const word = value.replace(/[,.;]+$/, '').replace(/^['"`]+|['"`]+$/g, '');
