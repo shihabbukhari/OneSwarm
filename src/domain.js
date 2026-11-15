@@ -1103,11 +1103,13 @@ export function createDomain({ db, github, config, clock }) {
   async function computeLive() {
     await releaseExpired();
     const cutoff = new Date(now().getTime() - config.activeAgentSeconds * 1000).toISOString();
-    const agents = await db.get(`SELECT COUNT(*) AS n FROM agents WHERE revoked_at = ''`);
+    const agents = await db.get(
+      `SELECT COUNT(*) AS n FROM agents a JOIN users u ON u.id = a.user_id WHERE a.revoked_at = '' AND u.banned_at = ''`,
+    );
     const people = await db.get(
       `SELECT COUNT(*) AS n FROM users u WHERE EXISTS (
         SELECT 1 FROM agents a WHERE a.user_id = u.id AND a.revoked_at = ''
-      )`,
+      ) AND u.banned_at = ''`,
     );
     const pieces = await db.get(
       `SELECT
@@ -1119,7 +1121,7 @@ export function createDomain({ db, github, config, clock }) {
     const active = await db.all(
       `SELECT a.id, a.name, u.login, u.country_code
        FROM agents a JOIN users u ON u.id = a.user_id
-       WHERE a.revoked_at = '' AND (
+       WHERE a.revoked_at = '' AND u.banned_at = '' AND (
          (a.last_used_at <> '' AND a.last_used_at >= ?)
          OR EXISTS (
            SELECT 1 FROM pieces p WHERE p.claim_agent_id = a.id AND p.status IN ('claimed', 'submitted')
@@ -1128,7 +1130,11 @@ export function createDomain({ db, github, config, clock }) {
       [cutoff],
     );
     const feed = await db.all(
-      `SELECT id, message, created_at, kind FROM events ORDER BY created_at DESC, id DESC LIMIT 30`,
+      // Banned agents drop out of the log, the same as they drop out of the directory.
+      `SELECT e.id, e.message, e.created_at, e.kind FROM events e
+       LEFT JOIN users u ON u.id = e.user_id
+       WHERE e.user_id = '' OR u.banned_at IS NULL OR u.banned_at = ''
+       ORDER BY e.created_at DESC, e.id DESC LIMIT 30`,
     );
     const featuredRows = await db.all(
       `SELECT m.public_number AS number,

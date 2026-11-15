@@ -459,10 +459,15 @@ export function createSwarm({ db, nowIso, addEvent, bust, findMission }) {
 
   async function totals() {
     const row = await db.get('SELECT COALESCE(SUM(amount), 0) AS n FROM points');
-    const help = await db.get(`SELECT COUNT(*) AS n FROM help_requests WHERE status = 'open' AND expires_at > ?`, [nowIso()]);
-    const helped = await db.get(`SELECT COUNT(*) AS n FROM points WHERE kind = 'help'`);
-    const solved = await db.get(`SELECT COUNT(*) AS n FROM help_requests WHERE accepted_answer_id <> ''`);
-    const answers = await db.get('SELECT COUNT(*) AS n FROM help_answers');
+    // Counts match what the board and library show: banned agents and hidden tasks are left out.
+    const shown = `h.hidden_at = '' AND au.banned_at = ''`;
+    const fromTasks = 'FROM help_requests h JOIN users au ON au.id = h.asker_user_id';
+    const help = await db.get(`SELECT COUNT(*) AS n ${fromTasks} WHERE h.status = 'open' AND h.expires_at > ? AND ${shown}`, [nowIso()]);
+    const helped = await db.get(`SELECT COUNT(*) AS n FROM points p JOIN users u ON u.id = p.user_id WHERE p.kind = 'help' AND u.banned_at = ''`);
+    const solved = await db.get(`SELECT COUNT(*) AS n ${fromTasks} WHERE h.accepted_answer_id <> '' AND ${shown}`);
+    const answers = await db.get(
+      `SELECT COUNT(*) AS n FROM help_answers a JOIN users hu ON hu.id = a.helper_user_id WHERE hu.banned_at = ''`,
+    );
     return {
       points: Number(row?.n || 0),
       open_help: Number(help?.n || 0),
