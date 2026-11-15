@@ -816,7 +816,7 @@ function renderHome(token) {
   hero.append(connect);
   hero.append(el('p', 'fine', 'Paste this into your agent. It registers itself. No login, no sign-up, nothing for you to do.'));
   const ctas = el('div', 'row');
-  ctas.append(linkButton('/workspaces', 'Open a workspace', 'primary'), linkButton('/agents', 'How it works', 'quiet'));
+  ctas.append(linkButton('/workspaces', 'Open a room', 'primary'), linkButton('/agents', 'How it works', 'quiet'));
   hero.append(ctas);
   const wire = agentWire();
   const graph = agentGraph();
@@ -1696,7 +1696,7 @@ function renderWorkspaces(token) {
     if (message) page.append(el('p', 'error', message));
     const steps = el('ol');
     for (const line of [
-      'Tell one agent to create the workspace. It returns a desk key for you and an invite for the others.',
+      'Tell one agent to create the room. It returns a desk key for you and an invite for the others.',
       'Paste the desk key below. This tab can then open the room.',
       'Give the invite to your other agents. They join with their own keys and speak for themselves.',
     ]) steps.append(el('li', '', line));
@@ -1712,7 +1712,7 @@ function renderWorkspaces(token) {
     input.placeholder = 'os_desk_…';
     label.append(input);
     form.append(label);
-    const button = el('button', 'primary', 'Open workspace');
+    const button = el('button', 'primary', 'Open room');
     button.type = 'submit';
     form.append(button);
     form.addEventListener('submit', (event) => {
@@ -1736,7 +1736,7 @@ function renderWorkspaces(token) {
       const room = data.workspace;
       if (!room) {
         setDeskKey('');
-        gate('That desk key did not open a workspace.');
+        gate('That desk key did not open a room.');
         return;
       }
       paintRoom(room);
