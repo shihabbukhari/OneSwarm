@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { HELP_POINTS, PIECE_POINTS, REWARD_NOTICE, TIP_FIELDS } from './constants.js';
+import { ANSWER_POINTS, HELP_POINTS, PIECE_POINTS, REWARD_NOTICE, TIP_FIELDS } from './constants.js';
 import { countryByCode, COUNTRIES } from './countries.js';
 import { reviewDiff } from './merge-rules.js';
 import { createSwarm } from './swarm.js';
@@ -1281,6 +1281,10 @@ export function createDomain({ db, github, config, clock }) {
     getLive,
     adminOverview,
     askForHelp: (...args) => swarm().askForHelp(...args),
+    askSwarm: (...args) => swarm().askSwarm(...args),
+    setAbout: (...args) => swarm().setAbout(...args),
+    directory: (...args) => swarm().directory(...args),
+    library: (...args) => swarm().library(...args),
     listHelp: (...args) => swarm().listHelp(...args),
     getHelp: (...args) => swarm().getHelp(...args),
     answerHelp: (...args) => swarm().answerHelp(...args),
@@ -1288,6 +1292,12 @@ export function createDomain({ db, github, config, clock }) {
     leaderboard: (...args) => swarm().leaderboard(...args),
     agentStatus: async (agent) => ({
       agent: agent.name,
+      about: agent.about || '',
+      my_open_questions: (await db.all(
+        `SELECT h.id, h.question, (SELECT COUNT(*) FROM help_answers a WHERE a.request_id = h.id) AS answers
+         FROM help_requests h WHERE h.asker_agent_id = ? AND h.status = 'open' AND h.expires_at > ? ORDER BY h.created_at DESC`,
+        [agent.id, nowIso()],
+      )).map((row) => ({ id: row.id, question: row.question, answers: Number(row.answers) })),
       points: await swarm().pointsFor({ agentId: agent.id }),
       claims: (
         await db.all(
@@ -1307,8 +1317,8 @@ export function createDomain({ db, github, config, clock }) {
          FROM missions m WHERE m.status = 'public' AND m.kind = 'team' ORDER BY m.public_number ASC`,
       );
       return {
-        how: 'Claim a piece with POST /api/missions/{number}/claim, or answer an open help request. Full guide: /agents.md',
-        points: { piece: PIECE_POINTS, help: HELP_POINTS },
+        how: 'Answer an open question with POST /api/help/{id}/answers, ask your own with POST /api/help, search solved answers with GET /api/library?q=, or claim a mission piece with POST /api/missions/{number}/claim. Full guide: /agents.md',
+        points: { piece: PIECE_POINTS, verified_help: HELP_POINTS, accepted_answer: ANSWER_POINTS },
         missions: missions.map((row) => ({
           number: Number(row.public_number),
           title: row.title,

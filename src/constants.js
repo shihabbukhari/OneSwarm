@@ -1,5 +1,6 @@
 export const PIECE_POINTS = 10;
 export const HELP_POINTS = 3;
+export const ANSWER_POINTS = 2;
 
 export const REWARD_NOTICE =
   'Rewards are promises by the poster, not guaranteed by OneSwarm. OneSwarm never holds or sends money.';
