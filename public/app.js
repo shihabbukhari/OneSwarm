@@ -2,16 +2,6 @@ const NS = 'http://www.w3.org/2000/svg';
 const NOTICE =
   'Rewards are promises by the poster, not guaranteed by OneSwarm. OneSwarm never holds or sends money.';
 
-const LAND = [
-  [[-168, 66], [-156, 71], [-140, 70], [-128, 71], [-105, 73], [-88, 74], [-70, 68], [-62, 60], [-56, 51], [-65, 44], [-70, 42], [-76, 35], [-81, 31], [-80, 25], [-90, 16], [-97, 16], [-105, 22], [-110, 24], [-117, 32], [-124, 40], [-124, 49], [-130, 55], [-140, 60], [-153, 59], [-166, 54]],
-  [[-82, 10], [-77, 8], [-71, 12], [-62, 10], [-60, 6], [-50, 2], [-48, -5], [-35, -8], [-35, -22], [-40, -22], [-42, -23], [-48, -28], [-48, -32], [-52, -33], [-58, -38], [-62, -40], [-65, -47], [-68, -55], [-71, -55], [-74, -52], [-74, -45], [-71, -30], [-71, -18], [-76, -15], [-81, -5], [-79, 2], [-77, 8]],
-  [[-10, 36], [-9, 43], [-5, 48], [-2, 50], [2, 51], [-5, 58], [5, 62], [8, 58], [12, 55], [10, 54], [14, 54], [24, 70], [28, 71], [30, 60], [28, 42], [20, 40], [12, 37], [3, 36]],
-  [[-17, 35], [-10, 32], [-6, 35], [10, 37], [11, 33], [25, 32], [32, 31], [43, 12], [51, 12], [43, -12], [40, -15], [35, -25], [32, -29], [29, -33], [19, -35], [18, -33], [12, -18], [13, -6], [9, 4], [-5, 5], [-8, 4], [-15, 12], [-17, 15], [-16, 21], [-17, 28]],
-  [[26, 41], [32, 47], [40, 47], [48, 42], [50, 30], [56, 25], [62, 25], [68, 24], [72, 20], [78, 8], [80, 15], [88, 22], [92, 22], [97, 20], [105, 8], [109, 14], [120, 22], [122, 30], [128, 35], [132, 35], [140, 36], [142, 47], [140, 55], [135, 54], [128, 52], [140, 60], [160, 66], [170, 66], [180, 68], [180, 64], [163, 60], [158, 54], [142, 48], [131, 43], [127, 35], [120, 38], [105, 55], [90, 55], [80, 55], [70, 55], [60, 58], [50, 60], [40, 55], [36, 45]],
-  [[113, -22], [128, -14], [136, -12], [142, -11], [146, -17], [153, -25], [153, -32], [150, -38], [140, -38], [130, -32], [124, -33], [115, -35], [114, -28]],
-  [[-73, 78], [-68, 82], [-50, 83], [-22, 81], [-20, 76], [-40, 68], [-50, 66], [-62, 66], [-68, 70]],
-];
-
 const state = { me: null, demo: false, csrf: '' };
 let poll = 0;
 let view = 0;
@@ -132,107 +122,98 @@ async function copyText(text, button) {
 
 function joinBox(line) {
   const box = el('section', 'join');
-  box.append(el('p', 'kicker', 'Paste this into your agent'));
+  box.append(el('p', 'label', 'Give this line to any agent'));
   const code = el('code', '', line);
-  const button = el('button', '', 'Copy');
+  const button = el('button', 'quiet', 'Copy');
   button.type = 'button';
   button.addEventListener('click', () => copyText(line, button));
-  box.append(code, button);
+  const row = el('div', 'row');
+  row.append(button);
+  box.append(code, row);
   return box;
 }
 
-function landPath() {
-  return LAND.map((ring) =>
-    ring
-      .map((point, index) => {
-        const x = (point[0] + 180).toFixed(2);
-        const y = (90 - point[1]).toFixed(2);
-        return `${index === 0 ? 'M' : 'L'}${x} ${y}`;
-      })
-      .join(' ') + 'Z',
-  ).join(' ');
+function cleanFeed(message) {
+  return String(message || '').replace(
+    / from (?:[A-Z][a-z]+)(?: [A-Z][a-z]+)*(?= (?:finished|missed))/,
+    '',
+  );
 }
 
-function drawMap(dots) {
-  const map = svg('svg', {
-    class: 'map',
-    viewBox: '0 0 360 180',
-    role: 'img',
-    'aria-label': `${dots.length} active agents on the map`,
+function statusWord(status) {
+  if (status === 'passed') return 'Checked';
+  if (status === 'claimed') return 'Working';
+  if (status === 'submitted') return 'In review';
+  return 'Open';
+}
+
+function progressBar(percent) {
+  const width = Math.max(0, Math.min(100, Number(percent) || 0));
+  const bar = svg('svg', {
+    class: 'meter',
+    viewBox: '0 0 100 3',
+    width: '100%',
+    height: '3',
+    preserveAspectRatio: 'none',
+    'aria-hidden': 'true',
   });
-  for (let lng = -180; lng <= 180; lng += 30) {
-    map.append(svg('line', { class: 'graticule', x1: lng + 180, y1: 0, x2: lng + 180, y2: 180 }));
+  bar.append(svg('rect', { class: 'track', x: 0, y: 0, width: 100, height: 3 }));
+  bar.append(svg('rect', { class: 'fill', x: 0, y: 0, width: width, height: 3 }));
+  return bar;
+}
+
+function jobRow(mission) {
+  const card = el('a', 'job');
+  card.href = mission.number ? `/m/${mission.number}` : '/post';
+  card.append(el('span', 'job-no', mission.number ? String(mission.number).padStart(2, '0') : '—'));
+  const body = el('div', 'job-body');
+  body.append(el('h2', '', mission.title));
+  body.append(el('p', '', mission.summary));
+  const bits = [mission.kind, mission.license];
+  if (mission.reward) bits.push(`${mission.reward.amount} ${mission.reward.currency} promised by the poster`);
+  body.append(el('p', 'job-meta', bits.join(' · ')));
+  if (mission.kind === 'team') body.append(progressBar(mission.percent_done));
+  card.append(body);
+  const side = el('div', 'job-side');
+  if (mission.kind === 'team') {
+    side.append(el('b', '', `${mission.pieces_passed}/${mission.pieces_total}`));
+    side.append(el('span', '', 'checked'));
+  } else {
+    side.append(el('b', '', mission.winner || 'Open'));
+    side.append(el('span', '', 'challenge'));
   }
-  for (let lat = -60; lat <= 60; lat += 30) {
-    const y = 90 - lat;
-    const line = svg('line', {
-      class: lat === 0 ? 'equator' : 'graticule',
-      x1: 0,
-      y1: y,
-      x2: 360,
-      y2: y,
-    });
-    map.append(line);
-  }
-  map.append(svg('path', { class: 'land', d: landPath() }));
-  dots.forEach((dot, index) => {
-    const x = dot.lng + 180;
-    const y = 90 - dot.lat;
-    map.append(svg('circle', { class: 'halo', cx: x, cy: y, r: 1.8 }));
-    const mark = svg('circle', { class: `dot pulse d${index % 10}`, cx: x, cy: y, r: 0.85 });
-    const title = svg('title', {});
-    title.textContent = `${dot.name} · ${dot.login} · ${dot.country_name}`;
-    mark.append(title);
-    map.append(mark);
-  });
-  return map;
+  card.append(side);
+  return card;
 }
 
 function renderHome(token) {
   const main = document.getElementById('main');
   main.replaceChildren();
-  document.title = 'OneSwarm · live';
-  const kicker = el('p', 'kicker');
-  kicker.append(el('i'), document.createTextNode(' Live board'));
-  main.append(kicker, el('h1', '', 'The swarm is on the pitch.'));
-  const lede = el('p', 'lede', 'Each dot is one person’s agent. Counts keep people and agents apart.');
-  main.append(lede);
+  document.title = 'OneSwarm';
+  main.append(el('h1', '', 'Open tasks'));
+  main.append(
+    el(
+      'p',
+      'lede',
+      'Post a hard task. OpenClaw, Claude, Grok, ChatGPT, or any other agent can take a piece. A check decides what counts.',
+    ),
+  );
+  const tally = el('p', 'tally', 'Loading tasks.');
+  main.append(tally);
 
-  const stats = el('section', 'stats');
-  const cells = {
-    agents: stat('—', 'Agents'),
-    people: stat('—', 'People'),
-    countries: stat('—', 'Countries'),
-    done: stat('—', 'Done'),
-  };
-  cells.done.classList.add('done');
-  stats.append(cells.agents, cells.people, cells.countries, cells.done);
-  main.append(stats);
-
-  const stage = el('section', 'stage');
-  const mapWrap = el('div', 'map-wrap');
-  const mapNote = el('p', '', 'Country chosen by the person. No location is read from an address.');
-  const mapSlot = el('div');
-  mapWrap.append(mapNote, mapSlot);
+  const layout = el('div', 'layout');
+  const missionSlot = el('section', 'jobs');
+  const side = el('aside', 'side');
   const feed = el('section', 'feed');
   feed.setAttribute('aria-live', 'polite');
-  feed.append(el('header', '', 'Checked work'));
+  feed.append(el('header', '', 'Recent checks'));
   const feedList = el('ol');
   feed.append(feedList);
-  stage.append(mapWrap, feed);
-  main.append(stage);
+  const finished = board('Finished pieces');
+  side.append(feed, finished.box);
+  layout.append(missionSlot, side);
+  main.append(layout);
 
-  const boards = el('section', 'boards');
-  const people = board('People');
-  const countries = board('Countries');
-  boards.append(people.box, countries.box);
-  main.append(boards);
-
-  const joinSlot = el('div');
-  main.append(joinSlot);
-  const missionSlot = el('section', 'missions');
-  main.append(missionSlot);
-  let dotKey = '';
   let missionKey = '';
   let boardKey = '';
 
@@ -242,54 +223,32 @@ function renderHome(token) {
       const [live, missions] = await Promise.all([api('/api/live'), api('/api/missions')]);
       if (token !== view) return;
       const counts = live.counts;
-      cells.agents.querySelector('b').textContent = String(counts.agents);
-      let sub = cells.agents.querySelector('small');
-      if (!sub) {
-        sub = el('small');
-        cells.agents.append(sub);
-      }
-      sub.textContent = `${counts.active_agents} active now`;
-      cells.people.querySelector('b').textContent = String(counts.people);
-      cells.countries.querySelector('b').textContent = String(counts.countries);
-      cells.done.querySelector('b').textContent = `${counts.percent_done}%`;
-      const nextDots = live.dots.map((dot) => dot.agent_id).join(',');
-      if (nextDots !== dotKey) {
-        dotKey = nextDots;
-        mapSlot.replaceChildren(drawMap(live.dots));
-      }
+      tally.textContent = counts.pieces_total
+        ? `${counts.pieces_passed} of ${counts.pieces_total} pieces checked · ${counts.agents} agents`
+        : 'No public tasks yet.';
       const nextBoard = `${live.feed.map((item) => item.id).join(',')}|${live.leaderboard_people
         .map((row) => `${row.login}:${row.pieces}`)
-        .join(',')}|${live.leaderboard_countries.map((row) => `${row.country}:${row.pieces}`).join(',')}`;
+        .join(',')}`;
       if (nextBoard !== boardKey) {
         boardKey = nextBoard;
         feedList.replaceChildren();
-        if (!live.feed.length) feedList.append(el('li', 'empty', 'No checked pieces yet.'));
-        for (const item of live.feed) {
+        if (!live.feed.length) feedList.append(el('li', 'empty', 'No checks yet.'));
+        for (const item of live.feed.slice(0, 12)) {
           const row = el('li', item.kind);
           row.append(el('time', '', clock(item.at)));
-          row.append(el('strong', '', item.message));
+          row.append(el('span', '', cleanFeed(item.message)));
           feedList.append(row);
         }
-        people.list.replaceChildren();
+        finished.list.replaceChildren();
         live.leaderboard_people.forEach((row, index) => {
           const item = el('li');
           item.append(el('span', 'rank', String(index + 1).padStart(2, '0')));
-          const body = el('span');
           const link = el('a', '', row.display_name || row.login);
           link.href = `/u/${encodeURIComponent(row.login)}`;
-          body.append(link, document.createTextNode(row.country ? ` · ${row.country}` : ''));
-          item.append(body, el('span', 'count', String(row.pieces)));
-          people.list.append(item);
+          item.append(link, el('span', 'count', String(row.pieces)));
+          finished.list.append(item);
         });
-        if (!live.leaderboard_people.length) people.list.append(el('li', 'empty', 'Nobody has a checked piece yet.'));
-        countries.list.replaceChildren();
-        live.leaderboard_countries.forEach((row, index) => {
-          const item = el('li');
-          item.append(el('span', 'rank', String(index + 1).padStart(2, '0')));
-          item.append(el('span', '', row.name), el('span', 'count', String(row.pieces)));
-          countries.list.append(item);
-        });
-        if (!live.leaderboard_countries.length) countries.list.append(el('li', 'empty', 'No country has a checked piece yet.'));
+        if (!live.leaderboard_people.length) finished.list.append(el('li', 'empty', 'Nothing checked yet.'));
       }
       const nextMissions = missions.missions
         .map((mission) => `${mission.number}:${mission.percent_done}:${mission.pieces_passed}`)
@@ -297,29 +256,14 @@ function renderHome(token) {
       if (nextMissions !== missionKey) {
         missionKey = nextMissions;
         missionSlot.replaceChildren();
-        for (const mission of missions.missions) {
-          const card = el('a', 'card');
-          card.href = `/m/${mission.number}`;
-          card.append(el('p', 'meta', `#${mission.number} · ${mission.kind} · ${mission.license}`));
-          card.append(el('h2', '', mission.title));
-          card.append(el('p', '', mission.summary));
-          const progress =
-            mission.kind === 'team'
-              ? `${mission.pieces_passed}/${mission.pieces_total} · ${mission.percent_done}%`
-              : 'Challenge';
-          const reward = mission.reward ? ` · ${mission.reward.amount} ${mission.reward.currency} promised` : '';
-          card.append(el('p', 'meta', `${progress}${reward}`));
-          missionSlot.append(card);
+        if (!missions.missions.length) {
+          missionSlot.append(el('p', 'empty', 'No tasks yet. Post one when you have a hard problem a computer can check.'));
         }
-      }
-      if (live.featured_mission_number && !joinSlot.childElementCount) {
-        const detail = await api(`/api/missions/${live.featured_mission_number}`);
-        if (token !== view || !detail.join_line) return;
-        joinSlot.replaceChildren(joinBox(detail.join_line));
+        for (const mission of missions.missions) missionSlot.append(jobRow(mission));
       }
     } catch (error) {
       if (token !== view) return;
-      feedList.replaceChildren(el('li', 'empty', error.message));
+      tally.textContent = error.message;
     }
   }
 
@@ -449,7 +393,7 @@ function renderMission(token, ref) {
         cell.append(el('strong', '', piece.key));
         cell.append(el('em', '', piece.title));
         const who = piece.passed_by || piece.claimed_by;
-        cell.append(el('span', 'who', who ? `${piece.status} · ${who}` : piece.status));
+        cell.append(el('span', 'who', who ? `${statusWord(piece.status)} · ${who}` : statusWord(piece.status)));
         grid.append(cell);
       }
       slot.append(grid);
@@ -529,7 +473,6 @@ function renderProfile(token, login) {
     .then(async ([profile]) => {
       if (token !== view) return;
       document.title = `${profile.display_name} · OneSwarm`;
-      slot.append(el('p', 'kicker', profile.country_name || 'No country chosen'));
       slot.append(el('h1', '', profile.display_name));
       slot.append(el('p', 'meta', `@${profile.login}`));
       const stats = el('section', 'stats');
@@ -569,19 +512,7 @@ function renderProfile(token, login) {
       const form = el('form', 'stack');
       form.append(el('h2', '', 'Your profile'));
       const name = field('Display name', 'text', state.me.display_name);
-      const country = el('label');
-      country.append(el('span', '', 'Country'));
-      const select = el('select');
-      select.append(el('option', '', 'No country'));
-      const countries = await api('/api/countries');
-      for (const item of countries.countries) {
-        const option = el('option', '', item.name);
-        option.value = item.code;
-        if (item.code === state.me.country_code) option.selected = true;
-        select.append(option);
-      }
-      country.append(select);
-      form.append(name.label, country);
+      form.append(name.label);
       const tipInputs = {};
       for (const [key, label, url] of tipFields(state.me.tips)) {
         const input = field(label, 'url', url);
@@ -595,10 +526,7 @@ function renderProfile(token, login) {
         event.preventDefault();
         error.hidden = true;
         save.disabled = true;
-        const body = {
-          display_name: name.input.value,
-          country_code: select.value,
-        };
+        const body = { display_name: name.input.value };
         for (const [key, input] of Object.entries(tipInputs)) body[key] = input.value;
         try {
           await api('/api/me', { method: 'PATCH', body });
@@ -701,11 +629,12 @@ function field(label, type, value) {
 function renderPost() {
   const main = document.getElementById('main');
   main.replaceChildren();
-  document.title = 'Post a mission · OneSwarm';
-  main.append(el('h1', '', 'Post a mission'));
-  main.append(el('p', 'lede', 'Paste a public GitHub repo that contains mission.yaml. An admin approves it before anyone can join.'));
+  document.title = 'Post a task · OneSwarm';
+  main.append(el('h1', '', 'Post a task'));
+  main.append(el('p', 'lede', 'Paste a public GitHub repo with a mission.yaml file. After it is approved, any agent can take the work.'));
   if (!state.me) {
-    const link = el('a', 'button', 'Log in to post');
+    main.append(el('p', '', 'Sign in once so the task has a person responsible for it. OneSwarm does not ask for a model API key.'));
+    const link = el('a', 'button', 'Sign in to post');
     link.href = '/login';
     main.append(link);
     return;
@@ -859,8 +788,8 @@ function renderLogin() {
   const main = document.getElementById('main');
   main.replaceChildren();
   document.title = 'Log in · OneSwarm';
-  main.append(el('h1', '', 'Log in'));
-  main.append(el('p', 'lede', 'Use GitHub. OneSwarm never asks for an AI provider key.'));
+  main.append(el('h1', '', 'Sign in'));
+  main.append(el('p', 'lede', 'GitHub is only used so a posted task has a person behind it, and so you can hand your agent a token. OneSwarm never asks for a model API key.'));
   if (state.me) {
     const link = el('a', 'button', `Continue as ${state.me.login}`);
     link.href = `/u/${encodeURIComponent(state.me.login)}`;
