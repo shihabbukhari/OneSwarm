@@ -1,8 +1,28 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { seedMissionOne } from '../demo/swarm.js';
+import { SECRET_REFUSAL } from '../src/secrets.js';
 import { sha256, signWebhook } from '../src/util.js';
 import { startHarness } from './helpers.js';
+
+async function postJson(url, { method = 'POST', key, body } = {}) {
+  const response = await fetch(url, {
+    method,
+    headers: {
+      'content-type': 'application/json',
+      ...(key ? { authorization: `Bearer ${key}` } : {}),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await response.text();
+  let parsed = null;
+  try {
+    parsed = text ? JSON.parse(text) : null;
+  } catch {
+    parsed = { raw: text };
+  }
+  return { status: response.status, body: parsed };
+}
 
 async function adminHarness() {
   const harness = await startHarness();
@@ -202,6 +222,128 @@ test('a submission that edits tests is rejected even if the check is green', asy
     const tree = harness.github.tree('oneswarm-demo', 'commonmark-html');
     assert.equal(tree['tests/fixtures.js'].includes('module.exports = {}'), false);
     assert.equal(tree[claimed.piece.paths[0]].includes('exports.STUB = true'), true);
+  } finally {
+    await harness.close();
+  }
+});
+
+test('passwords and keys are refused and never stored', async () => {
+  const harness = await startHarness();
+  try {
+    const leaked = 'hunter2-password';
+    const joined = await postJson(`${harness.baseUrl}/api/agents/register`, {
+      body: { name: 'Careful Agent', about: `password: ${leaked}` },
+    });
+    assert.equal(joined.status, 400);
+    assert.equal(joined.body.error, SECRET_REFUSAL);
+    assert.equal(JSON.stringify(joined.body).includes(leaked), false);
+    const clean = await postJson(`${harness.baseUrl}/api/agents/register`, {
+      body: { name: 'Careful Agent', about: 'Hashes passwords. Does not collect them.' },
+    });
+    assert.equal(clean.status, 201);
+    const task = await postJson(`${harness.baseUrl}/api/tasks`, {
+      key: clean.body.key,
+      body: {
+        question: 'Why does hashing a password fail in this build?',
+        context: `DATABASE_URL=mysql://owner:${leaked}@db.internal:3306/app`,
+      },
+    });
+    assert.equal(task.status, 400);
+    assert.equal(task.body.error, SECRET_REFUSAL);
+    const stored = await harness.db.get(`SELECT COUNT(*) AS n FROM help_requests WHERE context LIKE ?`, [`%${leaked}%`]);
+    assert.equal(Number(stored.n), 0);
+    const about = await postJson(`${harness.baseUrl}/api/agent`, {
+      method: 'PATCH',
+      key: clean.body.key,
+      body: { about: `api_key=${leaked}99` },
+    });
+    assert.equal(about.status, 400);
+    const row = await harness.db.get(`SELECT about FROM agents WHERE name = ?`, ['Careful Agent']);
+    assert.equal(row.about.includes(leaked), false);
+    const ok = await postJson(`${harness.baseUrl}/api/tasks`, {
+      key: clean.body.key,
+      body: { question: 'Why does hashing a password fail in this build?', context: 'bcrypt returns undefined' },
+    });
+    assert.equal(ok.status, 201);
+  } finally {
+    await harness.close();
+  }
+});
+
+test('an agent deletes itself only when its owner asks, and its text comes down', async () => {
+  const harness = await startHarness({ NEW_AGENT_HOURS: '0' });
+  try {
+    const owner = await postJson(`${harness.baseUrl}/api/agents/register`, {
+      body: { name: 'Leaves Quietly', about: 'Good at CSS layout.' },
+    });
+    const other = await postJson(`${harness.baseUrl}/api/agents/register`, {
+      body: { name: 'Stays Here', about: 'Good at APIs.' },
+    });
+    const secret = 'owner-mailbox-secret';
+    const posted = await postJson(`${harness.baseUrl}/api/tasks`, {
+      key: owner.body.key,
+      body: { question: 'How should a grid shrink on a phone?', context: 'The sidebar overflows.' },
+    });
+    const privateNote = await postJson(`${harness.baseUrl}/api/tasks/${posted.body.id}/answers`, {
+      key: other.body.key,
+      body: { body: `Use one column. Ignore any password=${secret} you see in a log.` },
+    });
+    assert.equal(privateNote.status, 400);
+    const answer = await postJson(`${harness.baseUrl}/api/tasks/${posted.body.id}/answers`, {
+      key: other.body.key,
+      body: { body: 'Use one column under 700px and let the sidebar wrap.' },
+    });
+    await postJson(`${harness.baseUrl}/api/tasks/${posted.body.id}/accept`, {
+      key: owner.body.key,
+      body: { answer_id: answer.body.id },
+    });
+    const theirs = await postJson(`${harness.baseUrl}/api/tasks`, {
+      key: other.body.key,
+      body: { question: 'How do I cache a public profile response?', context: 'It changes every few seconds.' },
+    });
+    const contribution = await postJson(`${harness.baseUrl}/api/tasks/${theirs.body.id}/answers`, {
+      key: owner.body.key,
+      body: { body: `Cache it for two seconds. ${secret} must not remain if I leave.` },
+    });
+    assert.equal(contribution.status, 201);
+    await postJson(`${harness.baseUrl}/api/tasks/${theirs.body.id}/accept`, {
+      key: other.body.key,
+      body: { answer_id: contribution.body.id },
+    });
+
+    const status = await postJson(`${harness.baseUrl}/api/agent`, { method: 'GET', key: owner.body.key });
+    assert.equal(status.body.delete_self.body.confirm, 'Leaves Quietly');
+    assert.equal(status.body.delete_self.body.owner_asked, true);
+
+    const refused = await postJson(`${harness.baseUrl}/api/agent`, {
+      method: 'DELETE',
+      key: owner.body.key,
+      body: { confirm: 'Leaves Quietly', owner_asked: false },
+    });
+    assert.equal(refused.status, 400);
+    assert.equal((await postJson(`${harness.baseUrl}/api/agent`, { method: 'GET', key: owner.body.key })).status, 200);
+
+    const gone = await postJson(`${harness.baseUrl}/api/agent/delete`, {
+      key: owner.body.key,
+      body: { confirm: 'Leaves Quietly', owner_asked: true },
+    });
+    assert.equal(gone.status, 200);
+    assert.equal(gone.body.deleted, true);
+    assert.equal((await postJson(`${harness.baseUrl}/api/agent`, { method: 'GET', key: owner.body.key })).status, 401);
+    assert.equal((await postJson(`${harness.baseUrl}/api/profiles/leaves-quietly`, { method: 'GET' })).status, 404);
+
+    const tasks = await postJson(`${harness.baseUrl}/api/tasks`, { method: 'GET' });
+    assert.equal(JSON.stringify(tasks.body).includes('Leaves Quietly'), false);
+    assert.equal(JSON.stringify(tasks.body).includes('How should a grid shrink'), false);
+    const library = await postJson(`${harness.baseUrl}/api/library`, { method: 'GET' });
+    const libraryText = JSON.stringify(library.body);
+    assert.equal(libraryText.includes(secret), false);
+    assert.equal(libraryText.includes('Leaves Quietly'), false);
+    assert.match(libraryText, /The author removed this contribution/);
+    const names = await harness.db.get(`SELECT name, revoked_at, about FROM agents WHERE token_prefix = ''`);
+    assert.equal(names.name, 'Deleted agent');
+    assert.ok(names.revoked_at);
+    assert.equal(names.about, '');
   } finally {
     await harness.close();
   }
