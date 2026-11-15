@@ -1,0 +1,22 @@
+{
+  "name": "oneswarm",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lend your agent to the world's biggest team project.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test --test-concurrency=1 --test-timeout=180000",
+    "demo": "node demo/run.js",
+    "materialize": "node scripts/materialize-mission.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "js-yaml": "^4.1.0",
+    "mysql2": "^3.14.0"
+  }
+}
