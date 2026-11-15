@@ -475,7 +475,7 @@ function agentGraph() {
   canvas.setAttribute('aria-label', 'Live graph of agents on the network and the agents they helped.');
   const legend = el('div', 'graph-legend');
   const count = el('span', '', '');
-  legend.append(count);
+  legend.append(el('span', 'pulse'), count);
   wrap.append(canvas, legend);
 
   const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -511,17 +511,18 @@ function agentGraph() {
     const list = [...names];
     for (let i = names.length; i < total; i += 1) list.push(`agent-${i}`);
     nodes = list.map((name, i) => {
-      const angle = hash(`${name}a`) * Math.PI * 2;
-      const radius = 0.12 + Math.sqrt(hash(`${name}r`)) * 0.36;
+      const named = names.includes(name);
+      const angle = (i / Math.max(list.length, 1)) * Math.PI * 2 - Math.PI / 2;
+      const radius = named ? 0.3 : 0.16 + hash(`${name}r`) * 0.12;
       return {
         name,
-        label: i < 5 && names.includes(name),
+        label: i < 6 && named,
         x: 0.5 + Math.cos(angle) * radius,
-        y: 0.5 + Math.sin(angle) * radius * 0.86,
+        y: 0.46 + Math.sin(angle) * radius * 0.82,
         vx: 0,
         vy: 0,
         phase: hash(`${name}p`) * 6.28,
-        r: names.includes(name) ? 3.4 + Math.max(0, 6 - i) * 0.45 : 2.2,
+        r: named ? 3.6 + Math.max(0, 5 - i) * 0.35 : 2.1,
       };
     });
     const index = new Map(nodes.map((n, i) => [n.name, i]));
@@ -534,20 +535,21 @@ function agentGraph() {
     layoutNodes();
   }
 
-  // A small force layout, run once when the network changes: nodes push apart,
-  // linked nodes pull to a resting distance, and everything is drawn toward the middle.
+  // A small force layout, run once when the network changes. Named agents
+  // keep enough room for a label. Linked agents stay near each other.
   function layoutNodes() {
-    const rest = 0.16;
-    for (let step = 0; step < 320; step += 1) {
-      const cool = 1 - step / 320;
+    const spread = Math.min(0.36, 0.9 / Math.sqrt(Math.max(nodes.length, 1)));
+    for (let step = 0; step < 380; step += 1) {
+      const cool = 1 - step / 380;
       for (let i = 0; i < nodes.length; i += 1) {
         for (let j = i + 1; j < nodes.length; j += 1) {
           const a = nodes[i];
           const b = nodes[j];
           const dx = a.x - b.x;
           const dy = a.y - b.y;
-          const d2 = Math.max(dx * dx + dy * dy, 0.0009);
-          const f = 0.000016 / d2;
+          const d2 = Math.max(dx * dx + dy * dy, 0.0008);
+          const labeled = a.label && b.label;
+          const f = (labeled ? 0.00011 : 0.00003) / d2;
           a.vx += dx * f; a.vy += dy * f; b.vx -= dx * f; b.vy -= dy * f;
         }
       }
@@ -557,17 +559,137 @@ function agentGraph() {
         const dx = b.x - a.x;
         const dy = b.y - a.y;
         const d = Math.max(Math.hypot(dx, dy), 0.001);
-        const f = (d - rest) * (e.strong ? 0.02 : 0.008);
+        const rest = e.strong ? spread : spread * 0.72;
+        const f = (d - rest) * (e.strong ? 0.018 : 0.006);
         a.vx += (dx / d) * f; a.vy += (dy / d) * f; b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
       }
       for (const n of nodes) {
-        n.vx += (0.5 - n.x) * 0.0035;
-        n.vy += (0.5 - n.y) * 0.0035;
-        n.x = Math.min(0.92, Math.max(0.08, n.x + n.vx * cool));
-        n.y = Math.min(0.86, Math.max(0.1, n.y + n.vy * cool));
-        n.vx *= 0.6; n.vy *= 0.6;
+        n.vx += (0.5 - n.x) * 0.0014;
+        n.vy += (0.46 - n.y) * 0.0014;
+        n.x = Math.min(0.84, Math.max(0.16, n.x + n.vx * cool));
+        n.y = Math.min(0.78, Math.max(0.14, n.y + n.vy * cool));
+        n.vx *= 0.62; n.vy *= 0.62;
       }
     }
+    seatLabels();
+  }
+
+  // Named agents sit on a ring so their names have a clear lane outward.
+  // Unnamed dots stay inside that ring.
+  function seatLabels() {
+    const labeled = nodes.filter((n) => n.label);
+    if (!labeled.length) return;
+    labeled.sort((a, b) => Math.atan2(a.y - 0.44, a.x - 0.5) - Math.atan2(b.y - 0.44, b.x - 0.5));
+    labeled.forEach((node, i) => {
+      const angle = -Math.PI / 2 + (i / labeled.length) * Math.PI * 2;
+      node.x = 0.5 + Math.cos(angle) * 0.27;
+      node.y = 0.44 + Math.sin(angle) * 0.23;
+      node.out = angle;
+    });
+    for (const n of nodes) {
+      if (n.label) continue;
+      const dx = n.x - 0.5;
+      const dy = n.y - 0.44;
+      const d = Math.hypot(dx, dy) || 1;
+      const max = 0.12;
+      if (d > max) {
+        n.x = 0.5 + (dx / d) * max;
+        n.y = 0.44 + (dy / d) * max;
+      }
+    }
+  }
+
+  function paintField(ctx) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(107, 227, 255, 0.055)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = 64; x < size.w; x += 64) { ctx.moveTo(x, 0); ctx.lineTo(x, size.h); }
+    for (let y = 64; y < size.h; y += 64) { ctx.moveTo(0, y); ctx.lineTo(size.w, y); }
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(107, 227, 255, 0.1)';
+    ctx.setLineDash([1.5, 8]);
+    const cx = size.w * 0.5;
+    const cy = size.h * 0.46;
+    for (const rad of [0.16, 0.3, 0.44]) {
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, Math.max(36, size.w * rad), Math.max(36, size.h * rad * 0.7), 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function roundBox(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function hitsNode(box, points) {
+    return points.some((p) => {
+      const cx = Math.max(box.x, Math.min(p.x, box.x + box.w));
+      const cy = Math.max(box.y, Math.min(p.y, box.y + box.h));
+      return Math.hypot(p.x - cx, p.y - cy) < 18;
+    });
+  }
+
+  function paintLabels(ctx, points) {
+    ctx.save();
+    ctx.font = '600 12px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textBaseline = 'middle';
+    const placed = [];
+    const margin = 14;
+    const floor = size.h - 52;
+    nodes.forEach((n, i) => {
+      if (!n.label) return;
+      const p = points[i];
+      let text = n.name;
+      const maxW = Math.min(200, size.w * 0.38);
+      while (text.length > 10 && ctx.measureText(`${text}…`).width > maxW) text = text.slice(0, -2);
+      if (text !== n.name) text = `${text}…`;
+      const boxW = ctx.measureText(text).width + 16;
+      const boxH = 22;
+      const angle = n.out ?? Math.atan2(p.y - size.h * 0.44, p.x - size.w * 0.5);
+      const ux = Math.cos(angle);
+      const uy = Math.sin(angle);
+      const tx = -uy;
+      const ty = ux;
+      const gap = n.r + 18;
+      const spots = [0, 22, -22, 44, -44].map((shift) => {
+        const cx = p.x + ux * (gap + boxW / 2) + tx * shift;
+        const cy = p.y + uy * (gap + boxH / 2) + ty * shift;
+        return {
+          x: Math.min(size.w - margin - boxW, Math.max(margin, cx - boxW / 2)),
+          y: Math.min(floor - boxH, Math.max(margin, cy - boxH / 2)),
+          w: boxW,
+          h: boxH,
+        };
+      });
+      const box = spots.find((candidate) => {
+        const clear = !placed.some((o) => candidate.x < o.x + o.w + 10 && candidate.x + candidate.w + 10 > o.x && candidate.y < o.y + o.h + 10 && candidate.y + candidate.h + 10 > o.y);
+        return clear && !hitsNode(candidate, points);
+      });
+      if (!box) return;
+      placed.push(box);
+      const rim = n.r + 6;
+      ctx.strokeStyle = 'rgba(107, 227, 255, 0.35)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(p.x + ux * rim, p.y + uy * rim);
+      ctx.lineTo(box.x + box.w / 2 - ux * (box.w / 2 - 2), box.y + box.h / 2);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(7, 12, 18, 0.88)';
+      roundBox(ctx, box.x, box.y, box.w, box.h, 8);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#e7f8ff';
+      ctx.fillText(text, box.x + 8, box.y + box.h / 2 + 0.5);
+    });
+    ctx.restore();
   }
 
   function draw(time) {
@@ -577,11 +699,11 @@ function agentGraph() {
     const accent = css.getPropertyValue('--accent').trim();
     const agent = css.getPropertyValue('--agent').trim();
     const line = css.getPropertyValue('--line-2').trim();
-    const ink = css.getPropertyValue('--muted').trim();
     const ctx = canvas.getContext('2d');
     ctx.setTransform(size.ratio, 0, 0, size.ratio, 0, 0);
     ctx.clearRect(0, 0, size.w, size.h);
-    const scale = Math.max(1, Math.min(2.6, Math.min(size.w, size.h) / 340));
+    paintField(ctx);
+    const scale = Math.max(1, Math.min(1.8, Math.min(size.w, size.h) / 420));
     const drift = still ? 0 : 0.006;
     const P = (n) => ({
       x: (n.x + Math.cos(time / 2600 + n.phase) * drift) * size.w,
@@ -591,8 +713,13 @@ function agentGraph() {
     for (const e of edges) {
       const a = P(nodes[e.a]);
       const b = P(nodes[e.b]);
-      ctx.strokeStyle = e.strong ? 'rgba(198, 255, 74, 0.45)' : line;
-      ctx.lineWidth = (e.strong ? 1.6 : 1.15) * scale;
+      if (e.strong) {
+        ctx.strokeStyle = 'rgba(198, 255, 74, 0.16)';
+        ctx.lineWidth = 6 * Math.min(scale, 1.3);
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      }
+      ctx.strokeStyle = e.strong ? 'rgba(198, 255, 74, 0.72)' : line;
+      ctx.lineWidth = (e.strong ? 1.35 : 1) * scale;
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     }
     if (!still && edges.length && Math.random() < 0.06) {
@@ -614,22 +741,24 @@ function agentGraph() {
       ctx.shadowBlur = 0;
       if (t > 0.92) lit.add(p.e.b);
     }
+    const points = nodes.map((n) => P(n));
     nodes.forEach((n, i) => {
-      const p = P(n);
+      const p = points[i];
       const hot = lit.has(i);
+      ctx.strokeStyle = hot ? accent : 'rgba(107, 227, 255, 0.4)';
+      ctx.lineWidth = 1.15;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, n.r * scale + 5, 0, Math.PI * 2);
+      ctx.stroke();
       ctx.fillStyle = hot ? accent : agent;
       ctx.shadowColor = hot ? accent : agent;
-      ctx.shadowBlur = (hot ? 18 : n.label ? 12 : 0) * scale;
+      ctx.shadowBlur = (hot ? 16 : n.label ? 10 : 0) * scale;
       ctx.beginPath();
       ctx.arc(p.x, p.y, n.r * scale, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
-      if (n.label && size.w > 360) {
-        ctx.fillStyle = ink;
-        ctx.font = `${Math.round(14 * Math.min(scale, 1.65))}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-        ctx.fillText(n.name, p.x + n.r * scale + 8, p.y + 5);
-      }
     });
+    if (size.w > 360) paintLabels(ctx, points);
     if (!still) frame = requestAnimationFrame(draw);
   }
 

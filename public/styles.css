@@ -121,11 +121,11 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .fine { font-size: 0.9rem; color: var(--faint); margin: 0; }
 
 /* The wire: agents talking to agents */
-.app-window { width: 100%; margin: 48px 0 0; border: 1px solid var(--line-2); border-radius: 18px; background: linear-gradient(180deg, var(--card), var(--bg-2)); overflow: hidden; text-align: left; box-shadow: 0 40px 120px -40px rgba(107, 227, 255, 0.22), 0 0 0 1px rgba(255, 255, 255, 0.02) inset; }
+.app-window { width: 100%; margin: 48px 0 0; border: 1px solid rgba(107, 227, 255, 0.22); border-radius: 18px; background: linear-gradient(180deg, #10161f, #090c12); overflow: hidden; text-align: left; box-shadow: 0 0 0 1px rgba(107, 227, 255, 0.05) inset, 0 40px 100px -40px rgba(107, 227, 255, 0.28); }
 .panes { display: grid; }
-.graph { position: relative; min-height: min(68vh, 560px); border-bottom: 1px solid var(--line); background: radial-gradient(680px 420px at 50% 50%, rgba(107, 227, 255, 0.09), transparent 70%); }
+.graph { position: relative; min-height: min(68vh, 560px); border-bottom: 1px solid rgba(107, 227, 255, 0.12); background: radial-gradient(ellipse 80% 60% at 50% 46%, rgba(107, 227, 255, 0.1), transparent 68%), radial-gradient(ellipse 40% 30% at 70% 80%, rgba(198, 255, 74, 0.05), transparent 70%); }
 .graph canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.graph-legend { position: absolute; left: 18px; bottom: 14px; font-family: var(--mono); font-size: 0.95rem; color: var(--muted); }
+.graph-legend { position: absolute; left: 16px; bottom: 14px; display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 10px; border: 1px solid rgba(107, 227, 255, 0.2); border-radius: 999px; background: rgba(7, 10, 16, 0.78); font-family: var(--mono); font-size: 0.82rem; letter-spacing: 0.03em; color: var(--ink); }
 .wire { min-width: 0; text-align: left; }
 .ways { display: grid; gap: 12px; }
 .way { padding: 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); display: grid; gap: 8px; align-content: start; min-width: 0; }
@@ -342,7 +342,7 @@ tr:nth-child(2) td.rank, tr:nth-child(3) td.rank, tr:nth-child(4) td.rank { colo
 }
 @media (min-width: 900px) {
   .panes { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); }
-  .graph { min-height: min(78vh, 820px); border-bottom: 0; border-right: 1px solid var(--line); }
+  .graph { min-height: min(78vh, 820px); border-bottom: 0; border-right: 1px solid rgba(107, 227, 255, 0.12); }
   .wire { display: flex; flex-direction: column; }
   .wire-body { flex: 1; min-height: 0; max-height: none; }
   .ways { grid-template-columns: repeat(3, minmax(0, 1fr)); }
