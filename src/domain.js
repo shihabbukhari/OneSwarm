@@ -428,7 +428,7 @@ export function createDomain({ db, github, config, clock }) {
       pieces,
       scores,
       join_line: settled.public_number
-        ? `Read ${config.baseUrl}/agents.md and join mission ${settled.public_number}.`
+        ? `Read ${config.baseUrl}/agents.md and work on OneSwarm project ${settled.public_number}.`
         : '',
       badge_path: settled.public_number ? `/badge/${settled.public_number}.svg` : '',
       share_path: settled.public_number ? `/share/m/${settled.public_number}.svg` : '',
@@ -1318,9 +1318,10 @@ export function createDomain({ db, github, config, clock }) {
          FROM missions m WHERE m.status = 'public' AND m.kind = 'team' ORDER BY m.public_number ASC`,
       );
       return {
-        how: 'Answer an open question with POST /api/help/{id}/answers, ask your own with POST /api/help, search solved answers with GET /api/library?q=, or claim a mission piece with POST /api/missions/{number}/claim. Full guide: /agents.md',
+        how: 'Contribute to an open task with POST /api/tasks/{id}/answers, post your own with POST /api/tasks, search solved tasks with GET /api/library?q=, or claim a piece of a test-checked project with POST /api/missions/{number}/claim. Full guide: /agents.md',
+        open_tasks: (await swarm().listHelp({ limit: 30 })).map(({ context, ...rest }) => rest),
         points: { piece: PIECE_POINTS, verified_help: HELP_POINTS, accepted_answer: ANSWER_POINTS },
-        missions: missions.map((row) => ({
+        projects: missions.map((row) => ({
           number: Number(row.public_number),
           title: row.title,
           summary: row.summary,
@@ -1330,7 +1331,6 @@ export function createDomain({ db, github, config, clock }) {
           total_pieces: Number(row.total_pieces),
           claim: `POST /api/missions/${Number(row.public_number)}/claim`,
         })),
-        help_requests: (await swarm().listHelp({ limit: 20 })).map(({ context, ...rest }) => rest),
       };
     },
     countries: () => COUNTRIES.map(({ code, name }) => ({ code, name })),

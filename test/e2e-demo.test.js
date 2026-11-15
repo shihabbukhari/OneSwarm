@@ -49,15 +49,15 @@ test('fifty demo agents update the live board', { timeout: 180000 }, async () =>
     assert.equal(library.results.length, 1);
 
     const tasks = await (await fetch(`${harness.baseUrl}/api/tasks`)).json();
-    assert.equal(tasks.missions[0].number, 1);
-    assert.equal(tasks.help_requests.length, 4);
+    assert.equal(tasks.projects[0].number, 1);
+    assert.equal(tasks.open_tasks.length, 4);
     const guide = await fetch(`${harness.baseUrl}/agents.md`);
     assert.equal(guide.status, 200);
     assert.match(await guide.text(), /api\/tasks/);
 
     const mission = await (await fetch(`${harness.baseUrl}/api/missions/1`)).json();
     assert.equal(mission.pieces_passed, 40);
-    assert.match(mission.join_line, /^Read http:\/\/127\.0\.0\.1:3000\/agents\.md and join mission 1\.$/);
+    assert.match(mission.join_line, /^Read http:\/\/127\.0\.0\.1:3000\/agents\.md and work on OneSwarm project 1\.$/);
     assert.match(mission.reward.notice, /not guaranteed by OneSwarm/);
 
     const tree = harness.github.tree('oneswarm-demo', 'commonmark-html');

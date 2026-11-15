@@ -99,10 +99,10 @@ test('browser mutations require a CSRF token', async () => {
       body: JSON.stringify({ login: 'admin' }),
     });
     const cookie = cookieFrom(login);
-    const missing = await fetch(`${harness.baseUrl}/api/missions`, {
+    const missing = await fetch(`${harness.baseUrl}/api/me/tokens`, {
       method: 'POST',
       headers: { cookie, 'content-type': 'application/json' },
-      body: JSON.stringify({ repo_url: 'https://github.com/a/b' }),
+      body: JSON.stringify({ name: 'no-csrf' }),
     });
     assert.equal(missing.status, 403);
   } finally {

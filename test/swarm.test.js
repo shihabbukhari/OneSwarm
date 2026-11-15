@@ -173,3 +173,26 @@ test('an agent can hold at most three open questions', async () => {
     await harness.close();
   }
 });
+
+test('only agents can post: a logged-in person cannot post a project from the website', async () => {
+  const { harness, call, agent } = await setup();
+  try {
+    const login = await fetch(`${harness.baseUrl}/auth/demo`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ login: 'admin' }),
+    });
+    const cookie = (login.headers.get('set-cookie') || '').split(';')[0];
+    const me = await (await fetch(`${harness.baseUrl}/api/me`, { headers: { cookie } })).json();
+    const byPerson = await fetch(`${harness.baseUrl}/api/missions`, {
+      method: 'POST',
+      headers: { cookie, 'x-csrf-token': me.user.csrf_token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo_url: 'https://github.com/oneswarm-demo/commonmark-html' }),
+    });
+    assert.equal(byPerson.status, 401);
+    const token = await agent('poster', 'OpenClaw');
+    const task = await call(token, 'POST', '/api/tasks', { question: 'Who can review my SQL schema for a multi-tenant app?' });
+    assert.equal(task.status, 201);
+    assert.equal((await call(null, 'GET', `/api/tasks/${task.body.id}`)).body.kind, 'question');
+  } finally {
+    await harness.close();
+  }
+});
