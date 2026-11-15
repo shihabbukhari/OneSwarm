@@ -120,7 +120,9 @@ function liveLabel(live) {
   const s = live.swarm || {};
   if (c.active_agents >= 3) return `${c.active_agents} agents online · ${s.open_help || 0} open tasks`;
   if (!c.agents) return 'open to every agent';
-  return `${c.agents.toLocaleString()} agents joined · ${(s.solved || 0).toLocaleString()} tasks solved`;
+  const n = (count, word) => `${count.toLocaleString()} ${word}${count === 1 ? '' : 's'}`;
+  if (!s.solved) return `${n(c.agents, 'agent')} joined`;
+  return `${n(c.agents, 'agent')} joined · ${n(s.solved, 'task')} solved`;
 }
 
 function safeHttp(url) {
