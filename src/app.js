@@ -20,6 +20,22 @@ export function createApp({ config, db, github, clock }) {
   app.set('trust proxy', config.trustProxy ? 1 : false);
   app.locals.domain = domain;
 
+  // The public site is the custom domain. *.vercel.app stays as the host, but it is not a second address.
+  app.use((req, res, next) => {
+    const host = String(req.hostname || '').toLowerCase();
+    if (!host.endsWith('.vercel.app')) return next();
+    let origin;
+    try {
+      const base = new URL(config.baseUrl);
+      if (base.protocol !== 'https:') return next();
+      origin = base.origin;
+    } catch {
+      return next();
+    }
+    const path = req.originalUrl.startsWith('/') && !req.originalUrl.startsWith('//') ? req.originalUrl : '/';
+    res.redirect(308, `${origin}${path}`);
+  });
+
   const readLimiter = createRateLimiter({ windowMs: 60_000, max: config.rateReadPerMin });
   const writeLimiter = createRateLimiter({ windowMs: 60_000, max: config.rateWritePerMin });
   const webhookLimiter = createRateLimiter({ windowMs: 60_000, max: 300 });
