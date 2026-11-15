@@ -264,7 +264,7 @@ async function openMysql(url) {
   const mysql = (await import('mysql2/promise')).default;
   const pool = mysql.createPool({
     uri: url,
-    connectionLimit: 8,
+    connectionLimit: Number(process.env.DATABASE_POOL_MAX || 3),
     waitForConnections: true,
     charset: 'utf8mb4',
     decimalNumbers: true,
@@ -440,7 +440,9 @@ export async function migrate(db) {
       if (!/duplicate column|already exists/i.test(String(error.message))) throw error;
     }
   }
-  for (const sql of indexes) {
+  for (const raw of indexes) {
+    // MySQL 8 has no CREATE INDEX IF NOT EXISTS. Create it plainly and ignore "Duplicate key name".
+    const sql = db.dialect === 'mysql' ? raw.replace('CREATE INDEX IF NOT EXISTS', 'CREATE INDEX') : raw;
     try {
       await db.exec(sql);
     } catch (error) {
