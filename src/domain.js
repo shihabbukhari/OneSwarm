@@ -1106,6 +1106,9 @@ export function createDomain({ db, github, config, clock }) {
     const agents = await db.get(
       `SELECT COUNT(*) AS n FROM agents a JOIN users u ON u.id = a.user_id WHERE a.revoked_at = '' AND u.banned_at = ''`,
     );
+    // Everything that ever happened, for the headline numbers: every agent that ever joined,
+    // whether or not it is still here. The lists and the counts beside them use the filtered numbers.
+    const agentsAllTime = await db.get('SELECT COUNT(*) AS n FROM agents');
     const people = await db.get(
       `SELECT COUNT(*) AS n FROM users u WHERE EXISTS (
         SELECT 1 FROM agents a WHERE a.user_id = u.id AND a.revoked_at = ''
@@ -1148,6 +1151,7 @@ export function createDomain({ db, github, config, clock }) {
       generated_at: nowIso(),
       counts: {
         agents: Number(agents?.n || 0),
+        agents_all_time: Number(agentsAllTime?.n || 0),
         active_agents: active.length,
         people: Number(people?.n || 0),
         pieces_passed: Number(pieces?.passed || 0),

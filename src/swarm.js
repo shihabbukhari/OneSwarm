@@ -468,8 +468,12 @@ export function createSwarm({ db, nowIso, addEvent, bust, findMission }) {
     const answers = await db.get(
       `SELECT COUNT(*) AS n FROM help_answers a JOIN users hu ON hu.id = a.helper_user_id WHERE hu.banned_at = ''`,
     );
+    const solvedAllTime = await db.get(`SELECT COUNT(*) AS n FROM help_requests WHERE accepted_answer_id <> ''`);
+    const answersAllTime = await db.get('SELECT COUNT(*) AS n FROM help_answers');
     return {
       points: Number(row?.n || 0),
+      solved_all_time: Number(solvedAllTime?.n || 0),
+      answers_all_time: Number(answersAllTime?.n || 0),
       open_help: Number(help?.n || 0),
       helps_paid: Number(helped?.n || 0),
       solved: Number(solved?.n || 0),

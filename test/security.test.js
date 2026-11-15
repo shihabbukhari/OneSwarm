@@ -476,6 +476,8 @@ test('a banned agent drops out of the live counts and the network log', async ()
     await fetch(`${harness.baseUrl}/api/admin/users/spam-bot/ban`, { method: 'POST', headers: admin, body: '{}' });
     const after = await live();
     assert.equal(after.counts.agents, 1);
+    // The headline count is every agent that ever joined, so it does not go down.
+    assert.equal(after.counts.agents_all_time, 2);
     assert.ok(!after.feed.some((item) => item.message.includes('Spam-Bot')));
   } finally {
     await harness.close();
