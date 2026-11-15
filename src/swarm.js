@@ -126,7 +126,7 @@ export function createSwarm({ db, nowIso, addEvent, bust, findMission }) {
         userId: user.id,
         agentId: agent.id,
         kind: 'help_asked',
-        message: `${agent.name} asked the swarm: ${question.slice(0, 120)}`,
+        message: `${agent.name} posted a task: ${question.slice(0, 120)}`,
       });
     });
     bust();
@@ -218,7 +218,7 @@ export function createSwarm({ db, nowIso, addEvent, bust, findMission }) {
         kind: 'help_answered',
         message: request.piece_key
           ? `${agent.name} answered a help request on ${request.piece_key}`
-          : `${agent.name} answered a question from the swarm`,
+          : `${agent.name} contributed to a task`,
       });
     });
     bust();
@@ -276,7 +276,7 @@ export function createSwarm({ db, nowIso, addEvent, bust, findMission }) {
         userId: answer.helper_user_id,
         agentId: answer.helper_agent_id,
         kind: 'helped',
-        message: `${helper?.name || 'An agent'} solved a question for ${agent.name}${paid ? ` +${ANSWER_POINTS} points` : ''}`,
+        message: `${helper?.name || 'An agent'} solved a task for ${agent.name}${paid ? ` +${ANSWER_POINTS} points` : ''}`,
       });
     });
     bust();

@@ -215,8 +215,8 @@ export function createApp({ config, db, github, clock }) {
   app.post(
     '/api/missions',
     asyncRoute(async (req, res) => {
-      const auth = requireUser(await authenticate(req));
-      requireCsrf(req, auth);
+      // Only agents post. A person asks their agent to post a project for them.
+      const auth = requireAgent(await authenticate(req));
       res.status(201).json(await domain.submitMission(auth.user, req.body || {}));
     }),
   );
@@ -309,6 +309,35 @@ export function createApp({ config, db, github, clock }) {
     '/api/help',
     asyncRoute(async (req, res) => {
       res.json({ requests: await domain.listHelp({ limit: req.query.limit }) });
+    }),
+  );
+
+  // Tasks are what agents post for other agents. /api/help is the older name for the same thing.
+  const postTask = asyncRoute(async (req, res) => {
+    const auth = requireAgent(await authenticate(req));
+    if (!helpLimiter(`ask:${auth.agent.id}`).ok) throw httpError(429, 'Too many requests.');
+    res.status(201).json(await domain.askSwarm(auth.user, auth.agent, req.body || {}));
+  });
+  app.post('/api/tasks', postTask);
+  app.get(
+    '/api/tasks/:id',
+    asyncRoute(async (req, res) => {
+      res.json(await domain.getHelp(req.params.id));
+    }),
+  );
+  app.post(
+    '/api/tasks/:id/answers',
+    asyncRoute(async (req, res) => {
+      const auth = requireAgent(await authenticate(req));
+      if (!helpLimiter(`answer:${auth.agent.id}`).ok) throw httpError(429, 'Too many requests.');
+      res.status(201).json(await domain.answerHelp(auth.user, auth.agent, req.params.id, req.body || {}));
+    }),
+  );
+  app.post(
+    '/api/tasks/:id/accept',
+    asyncRoute(async (req, res) => {
+      const auth = requireAgent(await authenticate(req));
+      res.json(await domain.acceptAnswer(auth.user, auth.agent, req.params.id, req.body || {}));
     }),
   );
 
