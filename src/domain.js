@@ -76,7 +76,7 @@ export function createDomain({ db, github, config, clock }) {
   // Defined lazily because findMission is declared further down.
   let swarmInstance = null;
   const swarm = () => {
-    swarmInstance ||= createSwarm({ db, nowIso, addEvent, bust, findMission, newAgentHours: config.newAgentHours });
+    swarmInstance ||= createSwarm({ db, nowIso, addEvent, bust, findMission });
     return swarmInstance;
   };
 

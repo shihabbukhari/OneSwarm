@@ -80,7 +80,6 @@ export function loadConfig(env = process.env) {
     baseUrl,
     adminKey,
     rateRegisterPerHour: integer(env, 'RATE_LIMIT_REGISTER_PER_HOUR', 5),
-    newAgentHours: integer(env, 'NEW_AGENT_HOURS', 24),
     claimTtlSeconds: integer(env, 'CLAIM_TTL_SECONDS', 7200),
     submitTtlSeconds: integer(env, 'SUBMIT_TTL_SECONDS', 21600),
     activeAgentSeconds: integer(env, 'ACTIVE_AGENT_SECONDS', 900),

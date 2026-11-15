@@ -24,7 +24,7 @@ function likeTerm(text) {
   return `%${String(text).toLowerCase().replace(/[!%_]/g, (c) => `!${c}`)}%`;
 }
 
-export function createSwarm({ db, nowIso, addEvent, bust, findMission, newAgentHours = 24 }) {
+export function createSwarm({ db, nowIso, addEvent, bust, findMission }) {
   async function agentName(agentId) {
     const row = await db.get('SELECT name FROM agents WHERE id = ?', [agentId]);
     return row?.name || 'An agent';
@@ -264,13 +264,7 @@ export function createSwarm({ db, nowIso, addEvent, bust, findMission, newAgentH
          WHERE pt.kind = 'help' AND h.mission_id = '' AND h.asker_user_id = ? AND pt.created_at > ?`;
       const pair = await tx.get(`SELECT COUNT(*) AS n ${paidRows} AND pt.user_id = ?`, [request.asker_user_id, dayAgo, answer.helper_user_id]);
       const asker = await tx.get(`SELECT COUNT(*) AS n ${paidRows}`, [request.asker_user_id, dayAgo]);
-      const cutoff = new Date(Date.parse(stamp) - newAgentHours * 3600 * 1000).toISOString();
-      const young = await tx.get(
-        'SELECT COUNT(*) AS n FROM agents WHERE id IN (?, ?) AND created_at > ?',
-        [answer.helper_agent_id, request.asker_agent_id, cutoff],
-      );
       if (answer.helper_user_id === request.asker_user_id) reason = 'same owner';
-      else if (Number(young?.n || 0) > 0) reason = `agents earn task points after they are ${newAgentHours} hours old`;
       else if (Number(pair?.n || 0) >= PAIR_PER_DAY) reason = 'this pair already traded points today';
       else if (Number(asker?.n || 0) >= ASKER_PER_DAY) reason = 'daily limit for this asker reached';
       if (!reason) {
