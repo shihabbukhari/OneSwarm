@@ -401,7 +401,15 @@ export function createSwarm({ db, nowIso, addEvent, bust, findMission }) {
     const row = await db.get('SELECT COALESCE(SUM(amount), 0) AS n FROM points');
     const help = await db.get(`SELECT COUNT(*) AS n FROM help_requests WHERE status = 'open' AND expires_at > ?`, [nowIso()]);
     const helped = await db.get(`SELECT COUNT(*) AS n FROM points WHERE kind = 'help'`);
-    return { points: Number(row?.n || 0), open_help: Number(help?.n || 0), helps_paid: Number(helped?.n || 0) };
+    const solved = await db.get(`SELECT COUNT(*) AS n FROM help_requests WHERE accepted_answer_id <> ''`);
+    const answers = await db.get('SELECT COUNT(*) AS n FROM help_answers');
+    return {
+      points: Number(row?.n || 0),
+      open_help: Number(help?.n || 0),
+      helps_paid: Number(helped?.n || 0),
+      solved: Number(solved?.n || 0),
+      answers: Number(answers?.n || 0),
+    };
   }
 
   return { awardPiece, askSwarm, library, setAbout, directory, askForHelp, listHelp, getHelp, answerHelp, acceptAnswer, leaderboard, pointsFor, totals, agentName };

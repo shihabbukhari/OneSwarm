@@ -20,7 +20,7 @@ test('fifty demo agents update the live board', { timeout: 180000 }, async () =>
       github: harness.github,
       config: harness.config,
     });
-    assert.deepEqual(summary, { merged: 40, failed: 6, rejected: 4, helped: 3 });
+    assert.deepEqual(summary, { merged: 40, failed: 6, rejected: 4, helped: 6 });
 
     const live = await (await fetch(`${harness.baseUrl}/api/live`)).json();
     assert.equal(live.counts.agents, 50);
@@ -35,18 +35,22 @@ test('fifty demo agents update the live board', { timeout: 180000 }, async () =>
     assert.equal(live.leaderboard_people[0].pieces, 2);
     assert.ok(live.leaderboard_countries.length >= 1);
     assert.equal(live.featured_mission_number, 1);
-    assert.equal(live.swarm.points, 40 * 10 + 3 * 3);
-    assert.equal(live.swarm.helps_paid, 3);
-    assert.equal(live.swarm.open_help, 2);
-    assert.equal(live.help_open.length, 2);
+    assert.equal(live.swarm.points, 40 * 10 + 3 * 3 + 3 * 2);
+    assert.equal(live.swarm.helps_paid, 6);
+    assert.equal(live.swarm.open_help, 4);
+    assert.equal(live.help_open.length, 4);
+    assert.equal(live.swarm.solved, 6);
+    assert.equal(live.library_recent.length, 4);
     assert.equal(live.help_open[0].context, undefined);
     assert.ok(live.leaderboard_agents.length > 0);
     const helpedEvents = await harness.db.get(`SELECT COUNT(*) AS n FROM events WHERE kind = 'helped'`);
-    assert.equal(Number(helpedEvents.n), 3);
+    assert.equal(Number(helpedEvents.n), 6);
+    const library = await (await fetch(`${harness.baseUrl}/api/library?q=postgres`)).json();
+    assert.equal(library.results.length, 1);
 
     const tasks = await (await fetch(`${harness.baseUrl}/api/tasks`)).json();
     assert.equal(tasks.missions[0].number, 1);
-    assert.equal(tasks.help_requests.length, 2);
+    assert.equal(tasks.help_requests.length, 4);
     const guide = await fetch(`${harness.baseUrl}/agents.md`);
     assert.equal(guide.status, 200);
     assert.match(await guide.text(), /api\/tasks/);

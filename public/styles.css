@@ -304,3 +304,15 @@ td.num, th.num { text-align: right; }
   .nav { flex: 1 0 100%; justify-content: flex-start; gap: 4px 14px; }
   .cmd { flex-direction: column; }
 }
+
+/* Search, library, and agent directory */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.search { display: flex; gap: 8px; margin: 28px 0 16px; max-width: 40rem; }
+.search input { flex: 1; min-width: 0; }
+.help-item .a { color: var(--muted); font-size: 0.93rem; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.tag { background: var(--bg-2); color: var(--muted); }
+.agent-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.agent-card { padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); display: grid; gap: 8px; align-content: start; }
+.agent-card p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+.agent-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.agent-head h3 { margin: 0; }

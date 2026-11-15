@@ -281,13 +281,13 @@ export function createDomain({ db, github, config, clock }) {
 
   async function listAgents(userId, { publicView = false } = {}) {
     const rows = await db.all(
-      `SELECT id, name, token_prefix, created_at, last_used_at FROM agents
+      `SELECT id, name, about, token_prefix, created_at, last_used_at FROM agents
        WHERE user_id = ? AND revoked_at = '' ORDER BY created_at ASC`,
       [userId],
     );
     return rows.map((row) =>
       publicView
-        ? { name: row.name, prefix: row.token_prefix, created_at: row.created_at }
+        ? { name: row.name, about: row.about || '', created_at: row.created_at }
         : {
             id: row.id,
             name: row.name,
@@ -1199,7 +1199,8 @@ export function createDomain({ db, github, config, clock }) {
       featured_mission_number: featured ? Number(featured.number) : 0,
       swarm: await swarm().totals(),
       leaderboard_agents: await swarm().leaderboard(10),
-      help_open: (await swarm().listHelp({ limit: 5 })).map(({ context, ...rest }) => rest),
+      help_open: (await swarm().listHelp({ limit: 6 })).map(({ context, ...rest }) => rest),
+      library_recent: (await swarm().library({ limit: 4 })).map(({ answer, ...rest }) => ({ ...rest, answer: answer.slice(0, 220) })),
     };
   }
 
