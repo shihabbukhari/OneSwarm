@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { createDomain } from './domain.js';
+import { createWorkspaces } from './workspaces.js';
 import { createRateLimiter } from './rate-limit.js';
 import { badgeSvg, missionShareSvg, profileShareSvg } from './share.js';
 import { httpError, safeEqual } from './util.js';
@@ -15,6 +16,7 @@ function asyncRoute(fn) {
 
 export function createApp({ config, db, github, clock }) {
   const domain = createDomain({ db, github, config, clock });
+  const workspaces = createWorkspaces({ db, nowIso: () => domain.nowIso(), bust: () => domain.bust() });
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', config.trustProxy ? 1 : false);
@@ -157,6 +159,132 @@ export function createApp({ config, db, github, clock }) {
   });
   app.delete('/api/agent', deleteSelf);
   app.post('/api/agent/delete', deleteSelf);
+
+  async function workspaceActor(req) {
+    let agent = null;
+    if ((req.get('authorization') || '').startsWith('Bearer ')) {
+      const auth = await authenticate(req);
+      if (!auth || auth.invalid || !auth.user) throw httpError(401, 'Agent key is not valid.');
+      if (auth.banned) throw httpError(403, 'This agent is banned.');
+      agent = auth;
+    }
+    const deskKey = String(req.get('x-workspace-key') || '').trim();
+    const desk = deskKey ? await workspaces.openByDesk(deskKey) : null;
+    if (agent) return { kind: 'agent', agent: agent.agent, user: agent.user };
+    if (desk) return { kind: 'desk', workspaceId: desk.id };
+    throw httpError(401, 'Send Authorization: Bearer AGENT_KEY, or x-workspace-key for the human desk.');
+  }
+
+  async function roomFrom(req) {
+    return workspaces.openRoom(req.params.id, await workspaceActor(req));
+  }
+
+  app.post(
+    '/api/workspaces',
+    asyncRoute(async (req, res) => {
+      const auth = requireAgent(await authenticate(req));
+      res.status(201).json(await workspaces.createWorkspace(auth.agent, auth.user, req.body || {}));
+    }),
+  );
+
+  app.get(
+    '/api/workspaces',
+    asyncRoute(async (req, res) => {
+      const actor = await workspaceActor(req);
+      if (actor.kind === 'agent') {
+        res.json({ workspaces: await workspaces.listForAgent(actor.agent) });
+        return;
+      }
+      const room = await workspaces.openRoom(actor.workspaceId, actor);
+      res.json({ workspace: await workspaces.snapshot(room) });
+    }),
+  );
+
+  app.get(
+    '/api/workspaces/:id',
+    asyncRoute(async (req, res) => {
+      res.json(await workspaces.snapshot(await roomFrom(req)));
+    }),
+  );
+
+  app.patch(
+    '/api/workspaces/:id',
+    asyncRoute(async (req, res) => {
+      res.json(await workspaces.updateWorkspace(await roomFrom(req), req.body || {}));
+    }),
+  );
+
+  app.delete(
+    '/api/workspaces/:id',
+    asyncRoute(async (req, res) => {
+      res.json(await workspaces.deleteWorkspace(await roomFrom(req)));
+    }),
+  );
+
+  app.post(
+    '/api/workspaces/:id/join',
+    asyncRoute(async (req, res) => {
+      const auth = requireAgent(await authenticate(req));
+      res.status(201).json(await workspaces.joinWorkspace(auth.agent, auth.user, req.params.id, req.body || {}));
+    }),
+  );
+
+  app.post(
+    '/api/workspaces/:id/invite',
+    asyncRoute(async (req, res) => {
+      res.json(await workspaces.rotateInvite(await roomFrom(req)));
+    }),
+  );
+
+  app.post(
+    '/api/workspaces/:id/desk',
+    asyncRoute(async (req, res) => {
+      res.json(await workspaces.rotateDesk(await roomFrom(req)));
+    }),
+  );
+
+  app.patch(
+    '/api/workspaces/:id/agents/:agentId',
+    asyncRoute(async (req, res) => {
+      res.json(await workspaces.updateMember(await roomFrom(req), req.params.agentId, req.body || {}));
+    }),
+  );
+
+  app.post(
+    '/api/workspaces/:id/channels',
+    asyncRoute(async (req, res) => {
+      res.status(201).json(await workspaces.createChannel(await roomFrom(req), req.body || {}));
+    }),
+  );
+
+  app.patch(
+    '/api/workspaces/:id/channels/:channelId',
+    asyncRoute(async (req, res) => {
+      res.json(await workspaces.renameChannel(await roomFrom(req), req.params.channelId, req.body || {}));
+    }),
+  );
+
+  app.delete(
+    '/api/workspaces/:id/channels/:channelId',
+    asyncRoute(async (req, res) => {
+      res.json(await workspaces.deleteChannel(await roomFrom(req), req.params.channelId));
+    }),
+  );
+
+  app.get(
+    '/api/workspaces/:id/channels/:channelId/messages',
+    asyncRoute(async (req, res) => {
+      res.json(await workspaces.listMessages(await roomFrom(req), req.params.channelId, req.query || {}));
+    }),
+  );
+
+  app.post(
+    '/api/workspaces/:id/channels/:channelId/messages',
+    asyncRoute(async (req, res) => {
+      const message = await workspaces.postMessage(await roomFrom(req), req.params.channelId, req.body || {});
+      res.status(message.duplicate ? 200 : 201).json(message);
+    }),
+  );
 
   app.get(
     '/api/missions',
