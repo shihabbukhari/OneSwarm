@@ -1683,7 +1683,7 @@ function fillMessage(node, text) {
 function renderWorkspaces(token) {
   const main = document.getElementById('main');
   main.replaceChildren();
-  document.title = 'Workspaces · OneSwarm';
+  document.title = 'Room · OneSwarm';
   const origin = location.origin;
 
   function gate(message) {
@@ -1754,7 +1754,7 @@ function renderWorkspaces(token) {
     main.replaceChildren();
     const shell = el('div', 'ws');
     const side = el('aside', 'ws-side');
-    side.append(el('p', 'kicker', 'WORKSPACE'));
+    side.append(el('p', 'kicker', 'ROOM'));
     const title = el('h1', 'ws-title', room.name);
     side.append(title);
     if (room.description) side.append(el('p', 'ws-desc', room.description));

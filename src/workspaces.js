@@ -64,13 +64,13 @@ export function createWorkspaces({ db, nowIso, bust, messageLimit = 20, messageW
   // A desk key opens one workspace as the human. An agent key opens only rooms that agent has joined.
   async function openRoom(workspaceId, actor) {
     const workspace = await workspaceById(workspaceId);
-    if (!workspace) throw httpError(404, 'Workspace not found.');
+    if (!workspace) throw httpError(404, 'Room not found.');
     if (actor.kind === 'desk') {
-      if (actor.workspaceId !== workspace.id) throw httpError(404, 'Workspace not found.');
+      if (actor.workspaceId !== workspace.id) throw httpError(404, 'Room not found.');
       return { workspace, member: null, via: 'desk' };
     }
     const member = await memberOf(workspace.id, actor.agent.id);
-    if (!member || member.revoked_at) throw httpError(404, 'Workspace not found.');
+    if (!member || member.revoked_at) throw httpError(404, 'Room not found.');
     return { workspace, member, via: 'agent' };
   }
 
@@ -151,7 +151,7 @@ export function createWorkspaces({ db, nowIso, bust, messageLimit = 20, messageW
   }
 
   async function createWorkspace(agent, user, input) {
-    const name = cleanName(input.name, 'Workspace name', 60);
+    const name = cleanName(input.name, 'Room name', 60);
     const description = clampText(input.description, 400).trim();
     assertNoSecrets(name, description);
     const integration = INTEGRATIONS.has(input.integration) ? input.integration : 'custom';
@@ -214,11 +214,11 @@ export function createWorkspaces({ db, nowIso, bust, messageLimit = 20, messageW
 
   async function joinWorkspace(agent, user, workspaceId, input) {
     const workspace = await workspaceById(workspaceId);
-    if (!workspace) throw httpError(404, 'Workspace not found.');
+    if (!workspace) throw httpError(404, 'Room not found.');
     const invite = String(input.invite || '');
     if (!invite || sha256(invite) !== workspace.invite_hash) throw httpError(403, 'Invite is not valid.');
     const existing = await memberOf(workspace.id, agent.id);
-    if (existing?.revoked_at) throw httpError(403, 'This agent was revoked. The workspace owner has to restore it.');
+    if (existing?.revoked_at) throw httpError(403, 'This agent was revoked. The room owner has to restore it.');
     if (existing) {
       return { joined: true, already: true, workspace: workspaceView(workspace), display_name: existing.display_name };
     }
@@ -237,8 +237,8 @@ export function createWorkspaces({ db, nowIso, bust, messageLimit = 20, messageW
   }
 
   async function updateWorkspace(room, input) {
-    if (!isOwner(room)) throw httpError(403, 'Only the workspace owner can change it.');
-    const name = input.name === undefined ? room.workspace.name : cleanName(input.name, 'Workspace name', 60);
+    if (!isOwner(room)) throw httpError(403, 'Only the room owner can change it.');
+    const name = input.name === undefined ? room.workspace.name : cleanName(input.name, 'Room name', 60);
     const description = input.description === undefined ? room.workspace.description : clampText(input.description, 400).trim();
     assertNoSecrets(name, description);
     await db.run(`UPDATE workspaces SET name = ?, description = ? WHERE id = ? AND deleted_at = ''`, [
@@ -251,14 +251,14 @@ export function createWorkspaces({ db, nowIso, bust, messageLimit = 20, messageW
   }
 
   async function deleteWorkspace(room) {
-    if (!isOwner(room)) throw httpError(403, 'Only the workspace owner can delete it.');
+    if (!isOwner(room)) throw httpError(403, 'Only the room owner can delete it.');
     await db.run(`UPDATE workspaces SET deleted_at = ? WHERE id = ? AND deleted_at = ''`, [nowIso(), room.workspace.id]);
     bust();
     return { deleted: true, id: room.workspace.id };
   }
 
   async function rotateInvite(room) {
-    if (!isOwner(room)) throw httpError(403, 'Only the workspace owner can rotate the invite.');
+    if (!isOwner(room)) throw httpError(403, 'Only the room owner can rotate the invite.');
     const invite = secret('os_invite');
     await db.run(`UPDATE workspaces SET invite_hash = ?, invite_prefix = ? WHERE id = ?`, [
       invite.hash,
@@ -269,7 +269,7 @@ export function createWorkspaces({ db, nowIso, bust, messageLimit = 20, messageW
   }
 
   async function rotateDesk(room) {
-    if (!isOwner(room)) throw httpError(403, 'Only the workspace owner can rotate the desk key.');
+    if (!isOwner(room)) throw httpError(403, 'Only the room owner can rotate the desk key.');
     const desk = secret('os_desk');
     await db.run(`UPDATE workspaces SET desk_hash = ?, desk_prefix = ? WHERE id = ?`, [
       desk.hash,
@@ -281,17 +281,17 @@ export function createWorkspaces({ db, nowIso, bust, messageLimit = 20, messageW
 
   async function updateMember(room, agentId, input) {
     const target = await memberOf(room.workspace.id, String(agentId || ''));
-    if (!target) throw httpError(404, 'Agent is not in this workspace.');
+    if (!target) throw httpError(404, 'Agent is not in this room.');
     const self = room.via === 'agent' && room.member.agent_id === target.agent_id;
     const owner = isOwner(room);
     if (!self && !owner) throw httpError(403, 'You cannot change this agent.');
-    if (target.role === 'owner' && input.revoked) throw httpError(400, 'The owner agent cannot be revoked. Delete the workspace instead.');
+    if (target.role === 'owner' && input.revoked) throw httpError(400, 'The owner agent cannot be revoked. Delete the room instead.');
     const display = input.display_name === undefined ? target.display_name : cleanName(input.display_name, 'Display name', 40);
     let mode = target.reply_mode;
     let paused = target.paused_at;
     let revoked = target.revoked_at;
     if (input.reply_mode !== undefined || input.paused !== undefined || input.revoked !== undefined || input.channels !== undefined) {
-      if (!owner) throw httpError(403, 'Only the workspace owner can change permissions.');
+      if (!owner) throw httpError(403, 'Only the room owner can change permissions.');
     }
     if (input.reply_mode !== undefined) {
       if (!MODES.has(input.reply_mode)) throw httpError(400, 'reply_mode must be mention, questions, all, or read_only.');
@@ -355,7 +355,7 @@ export function createWorkspaces({ db, nowIso, bust, messageLimit = 20, messageW
   }
 
   async function renameChannel(room, channelId, input) {
-    if (!isOwner(room)) throw httpError(403, 'Only the workspace owner can rename a channel.');
+    if (!isOwner(room)) throw httpError(403, 'Only the room owner can rename a channel.');
     const channel = await requireChannel(room, channelId);
     const name = channelName(input.name);
     const taken = await db.get(
@@ -369,13 +369,13 @@ export function createWorkspaces({ db, nowIso, bust, messageLimit = 20, messageW
   }
 
   async function deleteChannel(room, channelId) {
-    if (!isOwner(room)) throw httpError(403, 'Only the workspace owner can delete a channel.');
+    if (!isOwner(room)) throw httpError(403, 'Only the room owner can delete a channel.');
     const channel = await requireChannel(room, channelId);
     const count = await db.get(
       `SELECT COUNT(*) AS n FROM channels WHERE workspace_id = ? AND deleted_at = ''`,
       [room.workspace.id],
     );
-    if (Number(count?.n || 0) <= 1) throw httpError(400, 'A workspace keeps at least one channel.');
+    if (Number(count?.n || 0) <= 1) throw httpError(400, 'A room keeps at least one channel.');
     await db.run(`UPDATE channels SET deleted_at = ? WHERE id = ?`, [nowIso(), channel.id]);
     bust();
     return { deleted: true, id: channel.id };
