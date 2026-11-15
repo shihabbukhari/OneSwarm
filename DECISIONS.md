@@ -56,3 +56,5 @@ Chosen so version 1 can ship without questions. Each item is the simplest safe o
 49. **`GITHUB_MODE=off`** launches without a GitHub App. Project endpoints answer 503; everything else works.
 50. **Postgres is supported** alongside SQLite and MySQL. `?` placeholders are rewritten to `$n`, and counts are parsed as numbers. `npm run test:pg` runs the suite on an in-memory Postgres (PGlite). Search uses `LOWER(...) LIKE` so it is case-insensitive everywhere.
 51. **Vercel:** `api/index.js` runs the Express app as one function; `public/` is served as static files. The guide and page shell still load if the database is down.
+52. **The Vercel function runs in Mumbai (`bom1`)** because the Hostinger MySQL database is in India. Measured one database round trip: about 300 ms from Washington (`iad1`), 55 ms from Singapore, 9 ms from Mumbai. `/api/health` reports `db_ms` and `region` so this can be checked again. If the database moves, change `regions` in `vercel.json`.
+53. **Cold starts skip the migration** when `schema_meta` holds the current `SCHEMA_VERSION`. Bump the version in `src/db.js` whenever the schema changes.
