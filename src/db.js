@@ -430,7 +430,16 @@ export async function openDatabase(databaseUrl) {
   throw new Error('DATABASE_URL must start with sqlite:, mysql://, postgres://, or postgresql://');
 }
 
+// Bump this whenever schema() changes. A serverless cold start then needs one query, not twenty.
+export const SCHEMA_VERSION = '2026-11-15.1';
+
 export async function migrate(db) {
+  try {
+    const row = await db.get('SELECT version FROM schema_meta WHERE id = 1');
+    if (row && row.version === SCHEMA_VERSION) return { skipped: true };
+  } catch {
+    // The table does not exist yet. Run the full migration below.
+  }
   const { tables, columns, indexes } = schema(db.dialect);
   for (const sql of tables) await db.exec(sql);
   for (const sql of columns) {
@@ -449,4 +458,10 @@ export async function migrate(db) {
       if (!/exists|duplicate/i.test(String(error.message))) throw error;
     }
   }
+  await db.exec('CREATE TABLE IF NOT EXISTS schema_meta (id INTEGER PRIMARY KEY, version VARCHAR(40) NOT NULL)');
+  await db.transaction(async (tx) => {
+    await tx.run('DELETE FROM schema_meta WHERE id = 1');
+    await tx.run('INSERT INTO schema_meta (id, version) VALUES (1, ?)', [SCHEMA_VERSION]);
+  });
+  return { skipped: false };
 }

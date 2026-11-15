@@ -119,9 +119,20 @@ export function createApp({ config, db, github, clock }) {
 
   const registerLimiter = createRateLimiter({ windowMs: 60 * 60_000, max: config.rateRegisterPerHour });
 
-  app.get('/api/health', (req, res) => {
-    res.json({ ok: true, demo: config.demoMode, projects: config.githubMode !== 'off' });
-  });
+  app.get(
+    '/api/health',
+    asyncRoute(async (req, res) => {
+      const started = Date.now();
+      await db.get('SELECT 1 AS one');
+      res.json({
+        ok: true,
+        demo: config.demoMode,
+        projects: config.githubMode !== 'off',
+        db_ms: Date.now() - started,
+        region: process.env.VERCEL_REGION || 'local',
+      });
+    }),
+  );
 
   app.post(
     '/api/agents/register',
