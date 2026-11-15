@@ -161,6 +161,59 @@ function schema(dialect) {
         installation_id VARCHAR(32) NOT NULL,
         PRIMARY KEY (repo_owner, repo_name)
       )`,
+      `CREATE TABLE IF NOT EXISTS workspaces (
+        id VARCHAR(32) PRIMARY KEY,
+        name VARCHAR(80) NOT NULL,
+        description VARCHAR(400) NOT NULL DEFAULT '',
+        owner_agent_id VARCHAR(32) NOT NULL,
+        owner_user_id VARCHAR(32) NOT NULL,
+        invite_hash VARCHAR(64) NOT NULL,
+        invite_prefix VARCHAR(20) NOT NULL DEFAULT '',
+        desk_hash VARCHAR(64) NOT NULL,
+        desk_prefix VARCHAR(20) NOT NULL DEFAULT '',
+        created_at VARCHAR(40) NOT NULL,
+        deleted_at VARCHAR(40) NOT NULL DEFAULT ''
+      )`,
+      `CREATE TABLE IF NOT EXISTS workspace_members (
+        workspace_id VARCHAR(32) NOT NULL,
+        agent_id VARCHAR(32) NOT NULL,
+        user_id VARCHAR(32) NOT NULL,
+        display_name VARCHAR(80) NOT NULL,
+        integration VARCHAR(24) NOT NULL DEFAULT 'custom',
+        role VARCHAR(16) NOT NULL DEFAULT 'agent',
+        reply_mode VARCHAR(16) NOT NULL DEFAULT 'mention',
+        paused_at VARCHAR(40) NOT NULL DEFAULT '',
+        revoked_at VARCHAR(40) NOT NULL DEFAULT '',
+        joined_at VARCHAR(40) NOT NULL,
+        last_seen_at VARCHAR(40) NOT NULL DEFAULT '',
+        PRIMARY KEY (workspace_id, agent_id)
+      )`,
+      `CREATE TABLE IF NOT EXISTS channels (
+        id VARCHAR(32) PRIMARY KEY,
+        workspace_id VARCHAR(32) NOT NULL,
+        name VARCHAR(40) NOT NULL,
+        restricted INTEGER NOT NULL DEFAULT 0,
+        created_at VARCHAR(40) NOT NULL,
+        deleted_at VARCHAR(40) NOT NULL DEFAULT ''
+      )`,
+      `CREATE TABLE IF NOT EXISTS channel_access (
+        channel_id VARCHAR(32) NOT NULL,
+        agent_id VARCHAR(32) NOT NULL,
+        PRIMARY KEY (channel_id, agent_id)
+      )`,
+      `CREATE TABLE IF NOT EXISTS messages (
+        id VARCHAR(32) PRIMARY KEY,
+        workspace_id VARCHAR(32) NOT NULL,
+        channel_id VARCHAR(32) NOT NULL,
+        sender_agent_id VARCHAR(32) NOT NULL DEFAULT '',
+        sender_kind VARCHAR(16) NOT NULL,
+        sender_name VARCHAR(80) NOT NULL,
+        body ${longText} NOT NULL,
+        reply_to_id VARCHAR(32) NOT NULL DEFAULT '',
+        depth INTEGER NOT NULL DEFAULT 0,
+        client_id VARCHAR(64) NOT NULL DEFAULT '',
+        created_at VARCHAR(40) NOT NULL
+      )`,
     ],
     // Columns added after the first release. Older databases get them on start.
     columns: [
@@ -179,6 +232,13 @@ function schema(dialect) {
       'CREATE INDEX IF NOT EXISTS idx_points_agent ON points (agent_id)',
       'CREATE INDEX IF NOT EXISTS idx_points_user ON points (user_id)',
       'CREATE INDEX IF NOT EXISTS idx_help_status ON help_requests (status, expires_at)',
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_ws_invite ON workspaces (invite_hash)',
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_ws_desk ON workspaces (desk_hash)',
+      'CREATE INDEX IF NOT EXISTS idx_ws_owner ON workspaces (owner_agent_id)',
+      'CREATE INDEX IF NOT EXISTS idx_ws_members_agent ON workspace_members (agent_id)',
+      'CREATE INDEX IF NOT EXISTS idx_channels_ws ON channels (workspace_id, deleted_at)',
+      'CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages (channel_id, created_at)',
+      'CREATE INDEX IF NOT EXISTS idx_messages_client ON messages (workspace_id, client_id)',
     ],
   };
 }
@@ -431,7 +491,7 @@ export async function openDatabase(databaseUrl) {
 }
 
 // Bump this whenever schema() changes. A serverless cold start then needs one query, not twenty.
-export const SCHEMA_VERSION = '2026-11-15.1';
+export const SCHEMA_VERSION = '2026-11-15.2';
 
 export async function migrate(db) {
   try {
