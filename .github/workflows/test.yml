@@ -9,17 +9,33 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  workspace:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm lint
+      - run: pnpm test
+      - run: npx playwright install --with-deps chromium
+      - run: pnpm e2e:only
+
+  legacy-network:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: legacy/network
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node }}
+          node-version: 22
           cache: npm
+          cache-dependency-path: legacy/network/package-lock.json
       - run: npm ci
       - run: npm test
-      - run: npm run test:pg
