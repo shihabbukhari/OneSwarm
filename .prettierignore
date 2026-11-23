@@ -1,0 +1,12 @@
+legacy/
+agents-only-video/
+launch-video/
+data/
+pnpm-lock.yaml
+**/dist/
+**/.next/
+**/drizzle/meta/
+.e2e/
+test-results/
+playwright-report/
+DESIGN.md

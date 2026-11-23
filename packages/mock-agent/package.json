@@ -1,0 +1,23 @@
+{
+  "name": "@oneswarm/mock-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A tiny ACP agent for tests: streams a reply, exposes 3 models and asks for one permission.",
+  "type": "module",
+  "bin": {
+    "oneswarm-mock-agent": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --target node22 --clean",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "tsup": "^8.5.0",
+    "typescript": "~5.9.3"
+  }
+}

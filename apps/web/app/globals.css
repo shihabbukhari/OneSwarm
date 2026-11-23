@@ -1,0 +1,246 @@
+@import "tailwindcss";
+
+/*
+ * Tokens from DESIGN.md (Giga style reference): warm near-black surfaces,
+ * white and gray type, one ember accent, hairline white-alpha borders,
+ * pill controls, 16px cards. Depth comes from surface stepping, not shadows.
+ */
+@theme {
+  --color-obsidian: #000000;
+  --color-void: #050404;
+  --color-onyx: #0f0d0d;
+  --color-charcoal: #171615;
+  --color-graphite: #262828;
+  --color-paper: #ffffff;
+  --color-fog: #939292;
+  --color-ash: #878686;
+  --color-smoke: #6f6e6e;
+  --color-ember: #fe2c02;
+  --color-hair: rgb(255 255 255 / 0.08);
+  --color-hair-strong: rgb(255 255 255 / 0.14);
+  --color-glass: rgb(0 0 0 / 0.2);
+  --color-lift: rgb(255 255 255 / 0.04);
+  --color-lift-2: rgb(255 255 255 / 0.07);
+
+  --font-sans:
+    "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Cormorant Garamond", "Tiempos Headline", Georgia, serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --text-caption: 12px;
+  --text-caption--line-height: 2;
+  --text-body-sm: 14px;
+  --text-body-sm--line-height: 1.43;
+  --text-body: 16px;
+  --text-body--line-height: 1.5;
+  --text-subheading: 22px;
+  --text-subheading--line-height: 1.5;
+  --text-heading-sm: 30px;
+  --text-heading-sm--line-height: 1.33;
+  --text-heading: 48px;
+  --text-heading--line-height: 1.3;
+  --text-heading--letter-spacing: -0.96px;
+  --text-heading-lg: 60px;
+  --text-heading-lg--line-height: 1.2;
+  --text-heading-lg--letter-spacing: -1.8px;
+
+  --radius-chip: 6px;
+  --radius-image: 12px;
+  --radius-card: 16px;
+
+  --shadow-xl: rgba(0, 0, 0, 0.7) 0px 12px 32px -16px;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-fade-in: fade-in 120ms var(--ease-out);
+  --animate-rise: rise 120ms var(--ease-out);
+  --animate-pulse-dot: pulse-dot 1.4s ease-in-out infinite;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes pulse-dot {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
+  }
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    --duration: 120ms;
+  }
+
+  html,
+  body {
+    background: var(--color-onyx);
+    color: var(--color-paper);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.43;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    overflow: hidden;
+  }
+
+  ::selection {
+    background: rgb(255 255 255 / 0.2);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(255 255 255 / 0.12) transparent;
+  }
+
+  :focus-visible {
+    outline: 1px solid rgb(255 255 255 / 0.5);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* Uppercase mono eyebrow label */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 2;
+    letter-spacing: 0.009em;
+    text-transform: uppercase;
+    color: var(--color-ash);
+  }
+
+  .display {
+    font-family: var(--font-display);
+    font-weight: 300;
+    letter-spacing: -0.03em;
+  }
+
+  /* Markdown inside messages. Agent output is sanitized; raw HTML is never rendered. */
+  .prose-msg {
+    overflow-wrap: anywhere;
+  }
+  .prose-msg > * + * {
+    margin-top: 0.5rem;
+  }
+  .prose-msg a {
+    text-decoration: underline;
+    text-decoration-color: rgb(255 255 255 / 0.3);
+    text-underline-offset: 3px;
+  }
+  .prose-msg a:hover {
+    text-decoration-color: white;
+  }
+  .prose-msg strong {
+    font-weight: 600;
+  }
+  .prose-msg ul {
+    list-style: disc;
+    padding-left: 1.25rem;
+  }
+  .prose-msg ol {
+    list-style: decimal;
+    padding-left: 1.25rem;
+  }
+  .prose-msg blockquote {
+    border-left: 2px solid var(--color-hair-strong);
+    padding-left: 0.75rem;
+    color: var(--color-fog);
+  }
+  .prose-msg h1,
+  .prose-msg h2,
+  .prose-msg h3 {
+    font-weight: 500;
+    font-size: 15px;
+  }
+  .prose-msg :not(pre) > code {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    background: var(--color-lift-2);
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+  .prose-msg pre {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.6;
+    background: var(--color-void);
+    border: 1px solid var(--color-hair);
+    border-radius: var(--radius-image);
+    padding: 12px 14px;
+    overflow-x: auto;
+  }
+  .prose-msg table {
+    border-collapse: collapse;
+  }
+  .prose-msg th,
+  .prose-msg td {
+    border: 1px solid var(--color-hair);
+    padding: 4px 8px;
+  }
+
+  /* Syntax highlighting: monochrome with one warm accent, per DESIGN.md. */
+  .hljs-keyword,
+  .hljs-selector-tag,
+  .hljs-built_in {
+    color: #ffffff;
+    font-weight: 500;
+  }
+  .hljs-string,
+  .hljs-attr,
+  .hljs-template-tag {
+    color: #ffb49f;
+  }
+  .hljs-number,
+  .hljs-literal {
+    color: #ff8a6b;
+  }
+  .hljs-comment,
+  .hljs-quote {
+    color: var(--color-smoke);
+    font-style: italic;
+  }
+  .hljs-title,
+  .hljs-function,
+  .hljs-section {
+    color: #e8e6e3;
+  }
+  .hljs-addition {
+    color: #b8e0c2;
+  }
+  .hljs-deletion {
+    color: #ff9a85;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

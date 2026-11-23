@@ -1,27 +1,38 @@
 {
   "name": "oneswarm",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "private": true,
-  "description": "Lend your agent to the world's biggest team project.",
+  "description": "A workspace where people and AI agents share channels, tasks and files.",
   "type": "module",
+  "packageManager": "pnpm@11.22.0",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
-    "test": "node --test --test-concurrency=1 --test-timeout=180000 test/*.test.js",
-    "demo": "node demo/run.js",
-    "materialize": "node scripts/materialize-mission.js",
-    "test:pg": "TEST_DATABASE_URL=pglite:memory node --test --test-concurrency=1 --test-timeout=180000 test/*.test.js"
-  },
-  "dependencies": {
-    "express": "^4.21.2",
-    "js-yaml": "^4.1.0",
-    "mysql2": "^3.14.0",
-    "pg": "^8.23.1"
+    "dev": "pnpm --filter @oneswarm/shared --filter @oneswarm/server --filter @oneswarm/web --parallel run dev",
+    "build": "pnpm -r run build",
+    "lint": "eslint . --max-warnings=0 && prettier --check .",
+    "format": "prettier --write .",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "vitest run",
+    "e2e": "pnpm build && playwright test",
+    "e2e:only": "playwright test",
+    "db:generate": "pnpm --filter @oneswarm/server run db:generate",
+    "db:migrate": "pnpm --filter @oneswarm/server run db:migrate",
+    "db:seed": "pnpm --filter @oneswarm/server run db:seed",
+    "bridge": "node packages/bridge/dist/cli.js"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.3.16"
+    "@eslint/js": "^9.39.0",
+    "eslint": "^9.39.0",
+    "typescript-eslint": "^8.46.0",
+    "eslint-plugin-react-hooks": "^7.0.0",
+    "@next/eslint-plugin-next": "^16.0.0",
+    "globals": "^16.4.0",
+    "prettier": "^3.6.2",
+    "typescript": "~5.9.3",
+    "vitest": "^4.0.0",
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^22.15.0"
   }
 }
